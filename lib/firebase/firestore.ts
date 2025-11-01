@@ -1,0 +1,244 @@
+// Firebase Firestore Functions
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  Timestamp,
+} from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import { Turf, Booking, User } from '../../types';
+
+// ============ TURFS ============
+
+/**
+ * Get all turfs
+ */
+export const getTurfs = async (): Promise<Turf[]> => {
+  try {
+    const turfsCol = collection(db, 'turfs');
+    const q = query(turfsCol, where('isActive', '==', true));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Turf[];
+  } catch (error) {
+    console.error('Get turfs error:', error);
+    return [];
+  }
+};
+
+/**
+ * Get turf by ID
+ */
+export const getTurfById = async (id: string): Promise<Turf | null> => {
+  try {
+    const docRef = doc(db, 'turfs', id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as Turf;
+    }
+    return null;
+  } catch (error) {
+    console.error('Get turf by ID error:', error);
+    return null;
+  }
+};
+
+/**
+ * Search turfs
+ */
+export const searchTurfs = async (searchTerm: string): Promise<Turf[]> => {
+  try {
+    const turfsCol = collection(db, 'turfs');
+    const snapshot = await getDocs(turfsCol);
+    const turfs = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Turf[];
+    
+    // Client-side filtering (Firestore doesn't support full-text search natively)
+    return turfs.filter(turf =>
+      turf.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      turf.location.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      turf.description.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  } catch (error) {
+    console.error('Search turfs error:', error);
+    return [];
+  }
+};
+
+/**
+ * Add new turf (admin only)
+ */
+export const addTurf = async (turfData: Omit<Turf, 'id'>): Promise<{ success: boolean; id?: string; error?: string }> => {
+  try {
+    const docRef = await addDoc(collection(db, 'turfs'), {
+      ...turfData,
+      createdAt: Timestamp.now(),
+    });
+    return { success: true, id: docRef.id };
+  } catch (error: any) {
+    console.error('Add turf error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Update turf (admin only)
+ */
+export const updateTurf = async (id: string, turfData: Partial<Turf>): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const docRef = doc(db, 'turfs', id);
+    await updateDoc(docRef, turfData);
+    return { success: true };
+  } catch (error: any) {
+    console.error('Update turf error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Delete turf (admin only)
+ */
+export const deleteTurf = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    await deleteDoc(doc(db, 'turfs', id));
+    return { success: true };
+  } catch (error: any) {
+    console.error('Delete turf error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// ============ BOOKINGS ============
+
+/**
+ * Create booking
+ */
+export const createBooking = async (bookingData: Omit<Booking, 'id'>): Promise<{ success: boolean; id?: string; error?: string }> => {
+  try {
+    const docRef = await addDoc(collection(db, 'bookings'), {
+      ...bookingData,
+      createdAt: Timestamp.now(),
+    });
+    return { success: true, id: docRef.id };
+  } catch (error: any) {
+    console.error('Create booking error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Get user bookings
+ */
+export const getUserBookings = async (userId: string): Promise<Booking[]> => {
+  try {
+    const q = query(
+      collection(db, 'bookings'),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Booking[];
+  } catch (error) {
+    console.error('Get user bookings error:', error);
+    return [];
+  }
+};
+
+/**
+ * Get booking by ID
+ */
+export const getBookingById = async (id: string): Promise<Booking | null> => {
+  try {
+    const docRef = doc(db, 'bookings', id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as Booking;
+    }
+    return null;
+  } catch (error) {
+    console.error('Get booking by ID error:', error);
+    return null;
+  }
+};
+
+/**
+ * Get bookings for a specific turf on a specific date
+ */
+export const getTurfBookings = async (turfId: string, date: string): Promise<Booking[]> => {
+  try {
+    const q = query(
+      collection(db, 'bookings'),
+      where('turfId', '==', turfId),
+      where('date', '==', date),
+      where('status', 'in', ['confirmed', 'pending'])
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Booking[];
+  } catch (error) {
+    console.error('Get turf bookings error:', error);
+    return [];
+  }
+};
+
+/**
+ * Update booking status
+ */
+export const updateBookingStatus = async (
+  id: string,
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed'
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const docRef = doc(db, 'bookings', id);
+    await updateDoc(docRef, { status });
+    return { success: true };
+  } catch (error: any) {
+    console.error('Update booking status error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Cancel booking
+ */
+export const cancelBooking = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  return updateBookingStatus(id, 'cancelled');
+};
+
+/**
+ * Get all bookings (admin only)
+ */
+export const getAllBookings = async (): Promise<Booking[]> => {
+  try {
+    const q = query(
+      collection(db, 'bookings'),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Booking[];
+  } catch (error) {
+    console.error('Get all bookings error:', error);
+    return [];
+  }
+};

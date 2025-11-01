@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../config/firebase';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { useAuth } from '../contexts/AuthContext';
+import { LoadingSpinner } from '../components/ui';
 
 // Screens
 import HomeScreen from '../screens/HomeScreen';
@@ -81,25 +81,13 @@ function MainTabs() {
 }
 
 export default function Navigation() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    // Listen for authentication state changes
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setIsLoggedIn(!!user);
-      setIsLoading(false);
-    });
-
-    // Cleanup subscription on unmount
-    return unsubscribe;
-  }, []);
+  const { isAuthenticated, loading } = useAuth();
 
   // Show loading screen while checking auth state
-  if (isLoading) {
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10b981" />
+        <LoadingSpinner size="large" />
       </View>
     );
   }
@@ -107,7 +95,7 @@ export default function Navigation() {
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!isLoggedIn ? (
+        {!isAuthenticated ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
         ) : (
           <>
