@@ -16,6 +16,7 @@ const firebaseConfig = {
   storageBucket: "turf-booking-63618.firebasestorage.app",
   messagingSenderId: "717547014679",
   appId: "1:717547014679:web:ae80905698fd97b9a0ea52",
+  measurementId: "G-F1EM7861QX"
 };
 
 // Initialize Firebase

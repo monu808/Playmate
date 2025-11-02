@@ -10,7 +10,7 @@ import {
   signInWithCredential,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, uploadString } from 'firebase/storage';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { auth, db, storage } from '../../config/firebase';
@@ -19,30 +19,16 @@ import { isAdminEmail, initializeAdminUser } from './admin';
 
 WebBrowser.maybeCompleteAuthSession();
 
-// Google OAuth Configuration
-const EXPO_CLIENT_ID = '717547014679-WEB_CLIENT_ID.apps.googleusercontent.com';
-const IOS_CLIENT_ID = '717547014679-IOS_CLIENT_ID.apps.googleusercontent.com';
-const ANDROID_CLIENT_ID = '717547014679-ANDROID_CLIENT_ID.apps.googleusercontent.com';
-
 /**
  * Sign in with Google using Expo AuthSession
  */
 export const signInWithGoogle = async () => {
   try {
-    const config = {
-      expoClientId: EXPO_CLIENT_ID,
-      iosClientId: IOS_CLIENT_ID,
-      androidClientId: ANDROID_CLIENT_ID,
-      webClientId: EXPO_CLIENT_ID,
-    };
-
-    const [request, response, promptAsync] = Google.useAuthRequest(config);
-
-    // This won't work here - we need to refactor this
-    // For now, return a helpful message
+    // Google Sign-In is now implemented in LoginScreen component
+    // This function is kept for backwards compatibility
     return {
       success: false,
-      error: 'Google Sign-In requires component-level implementation. Please check the updated LoginScreen.',
+      error: 'Google Sign-In requires component-level implementation. Please use the LoginScreen.',
     };
   } catch (error: any) {
     console.error('Google sign in error:', error);
@@ -241,45 +227,22 @@ export const uploadProfileImage = async (
     console.log('📤 Starting image upload for user:', uid);
     console.log('📷 Image URI:', imageUri);
 
-    // Convert image URI to blob
+    // Fetch the image and convert to blob
     const response = await fetch(imageUri);
-    if (!response.ok) {
-      throw new Error('Failed to fetch image from URI');
-    }
     const blob = await response.blob();
     console.log('✅ Image converted to blob, size:', blob.size);
 
-    // Create storage reference - try turfs folder first to test
-    const filename = `${uid}_${Date.now()}.jpg`;
-    const storageRef = ref(storage, `turfs/profile-${filename}`);
-    console.log('📁 Storage reference created:', `turfs/profile-${filename}`);
+    // Create storage reference
+    const filename = `profile-${uid}_${Date.now()}.jpg`;
+    const storageRef = ref(storage, `turfs/${filename}`);
+    console.log('📁 Storage reference created:', `turfs/${filename}`);
 
-    // Upload image with metadata
-    const metadata = {
-      contentType: 'image/jpeg',
-    };
+    // Upload blob directly
     console.log('⬆️ Uploading image...');
-    
-    // Try uploadBytesResumable for better error handling
-    const uploadTask = uploadBytesResumable(storageRef, blob, metadata);
-    
-    await new Promise((resolve, reject) => {
-      uploadTask.on('state_changed',
-        (snapshot: any) => {
-          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          console.log(`Upload is ${progress.toFixed(0)}% done`);
-        },
-        (error: any) => {
-          console.error('Upload error details:', error);
-          reject(error);
-        },
-        () => {
-          console.log('✅ Image uploaded successfully');
-          resolve(uploadTask.snapshot);
-        }
-      );
+    const uploadResult = await uploadBytes(storageRef, blob, {
+      contentType: 'image/jpeg',
     });
-    
+    console.log('✅ Image uploaded successfully');
 
     // Get download URL
     console.log('🔗 Getting download URL...');

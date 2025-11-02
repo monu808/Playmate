@@ -27,17 +27,15 @@ export default function LoginScreen({ navigation }: any) {
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   // Configure Google Auth
-  const redirectUri = 'https://auth.expo.io/@anonymous/PlaymateApp';
-  
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: '717547014679-5mjcl3dl32vg635go49gf3eeoje9595g.apps.googleusercontent.com',
     iosClientId: '717547014679-5mjcl3dl32vg635go49gf3eeoje9595g.apps.googleusercontent.com',
     androidClientId: '717547014679-5mjcl3dl32vg635go49gf3eeoje9595g.apps.googleusercontent.com',
-    redirectUri: redirectUri,
     scopes: ['profile', 'email'],
+    redirectUri: 'https://auth.expo.io/@anonymous/PlaymateApp',
   });
 
-  console.log('Using redirect URI:', redirectUri);
+  console.log('🔗 Redirect URI:', request?.redirectUri);
 
   // Handle Google sign-in response
   useEffect(() => {
