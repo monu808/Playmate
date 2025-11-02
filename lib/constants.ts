@@ -1,5 +1,9 @@
 // Application Constants
 
+// API Keys
+export const RAZORPAY_KEY_ID = 'rzp_test_RVSNX0MyGKgNm9';
+export const GOOGLE_MAPS_API_KEY = 'AIzaSyBSRDlU1pYUR2afuRIUU2H4vWHDRe_n3_o';
+
 // Payment constants (EXACT values from website - CRITICAL)
 export const PLATFORM_COMMISSION = 25; // Rs 25 per booking
 export const RAZORPAY_FEE_PERCENTAGE = 2.07; // 1.75% + 18% GST

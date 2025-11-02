@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { View, StyleSheet } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { LoadingSpinner } from '../components/ui';
+import { isAdmin } from '../lib/firebase/admin';
 
 // Screens
 import HomeScreen from '../screens/HomeScreen';
@@ -14,10 +15,17 @@ import BookingsScreen from '../screens/BookingsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import LoginScreen from '../screens/Auth/LoginScreen';
 import SignupScreen from '../screens/Auth/SignupScreen';
+import AdminDashboardScreen from '../screens/Admin/AdminDashboardScreen';
+import ManageTurfsScreen from '../screens/Admin/ManageTurfsScreen';
+import AdminBookingsScreen from '../screens/Admin/AdminBookingsScreen';
+import ManageUsersScreen from '../screens/Admin/ManageUsersScreen';
+import AnalyticsScreen from '../screens/Admin/AnalyticsScreen';
+import AddTurfScreen from '../screens/Admin/AddTurfScreenEnhanced';
 
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
+  Admin: undefined;
   TurfDetail: { turfId: string };
 };
 
@@ -32,9 +40,19 @@ export type MainTabParamList = {
   Profile: undefined;
 };
 
+export type AdminStackParamList = {
+  AdminDashboard: undefined;
+  ManageTurfs: undefined;
+  AddTurf: undefined;
+  AdminBookings: undefined;
+  ManageUsers: undefined;
+  Analytics: undefined;
+};
+
 const Stack = createStackNavigator<RootStackParamList>();
 const AuthStack = createStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
+const AdminStack = createStackNavigator<AdminStackParamList>();
 
 function AuthNavigator() {
   return (
@@ -46,6 +64,23 @@ function AuthNavigator() {
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Signup" component={SignupScreen} />
     </AuthStack.Navigator>
+  );
+}
+
+function AdminNavigator() {
+  return (
+    <AdminStack.Navigator
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <AdminStack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
+      <AdminStack.Screen name="ManageTurfs" component={ManageTurfsScreen} />
+      <AdminStack.Screen name="AddTurf" component={AddTurfScreen} />
+      <AdminStack.Screen name="AdminBookings" component={AdminBookingsScreen} />
+      <AdminStack.Screen name="ManageUsers" component={ManageUsersScreen} />
+      <AdminStack.Screen name="Analytics" component={AnalyticsScreen} />
+    </AdminStack.Navigator>
   );
 }
 
@@ -81,10 +116,32 @@ function MainTabs() {
 }
 
 export default function Navigation() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
+  const [userIsAdmin, setUserIsAdmin] = useState(false);
+  const [checkingAdmin, setCheckingAdmin] = useState(true);
+
+  // Check if user is admin
+  useEffect(() => {
+    async function checkAdminStatus() {
+      if (user?.uid) {
+        const adminStatus = await isAdmin(user.uid);
+        setUserIsAdmin(adminStatus);
+      } else {
+        setUserIsAdmin(false);
+      }
+      setCheckingAdmin(false);
+    }
+
+    if (isAuthenticated && user) {
+      checkAdminStatus();
+    } else {
+      setCheckingAdmin(false);
+      setUserIsAdmin(false);
+    }
+  }, [isAuthenticated, user]);
 
   // Show loading screen while checking auth state
-  if (loading) {
+  if (loading || checkingAdmin) {
     return (
       <View style={styles.loadingContainer}>
         <LoadingSpinner size="large" />
@@ -97,6 +154,15 @@ export default function Navigation() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
+        ) : userIsAdmin ? (
+          <>
+            <Stack.Screen name="Admin" component={AdminNavigator} />
+            <Stack.Screen 
+              name="TurfDetail" 
+              component={TurfDetailScreen}
+              options={{ headerShown: true, title: 'Turf Details' }}
+            />
+          </>
         ) : (
           <>
             <Stack.Screen name="Main" component={MainTabs} />

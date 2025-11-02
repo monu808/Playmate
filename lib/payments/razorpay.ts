@@ -1,5 +1,5 @@
 // Razorpay Payment Integration (CRITICAL)
-import { PLATFORM_COMMISSION, RAZORPAY_FEE_PERCENTAGE } from '../constants';
+import { PLATFORM_COMMISSION, RAZORPAY_FEE_PERCENTAGE, RAZORPAY_KEY_ID } from '../constants';
 import { PaymentBreakdown } from '../../types';
 import { calculateBaseTurfAmount, calculatePaymentBreakdown } from '../utils';
 
@@ -96,7 +96,7 @@ export async function initiatePayment(
     // Uncomment when react-native-razorpay is installed:
     /*
     const options: PaymentOptions = {
-      key: 'YOUR_RAZORPAY_KEY_ID', // This should come from environment
+      key: RAZORPAY_KEY_ID, // rzp_test_RVSNX0MyGKgNm9
       amount: amount * 100, // Convert to paise
       currency,
       name: 'Playmate Turf Booking',

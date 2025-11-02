@@ -1,0 +1,64 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Users can read their own data, admins can read all
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      // Users can create/update their own profile
+      allow create, update: if isAuthenticated() && request.auth.uid == userId;
+      // Only admins can delete users
+      allow delete: if isAdmin();
+    }
+    
+    // Turfs collection
+    match /turfs/{turfId} {
+      // Everyone can read turfs (for browsing)
+      allow read: if true;
+      // Only admins can create, update, or delete turfs
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Bookings collection - CRITICAL FOR SLOT AVAILABILITY
+    match /bookings/{bookingId} {
+      // ✅ ANYONE authenticated can read bookings (needed to check slot availability)
+      // This is ESSENTIAL for the booking system to work
+      allow read: if isAuthenticated();
+      
+      // Users can only create bookings for themselves
+      allow create: if isAuthenticated() && 
+                      request.auth.uid == request.resource.data.userId;
+      
+      // Users can update their own bookings, admins can update any
+      allow update: if isAuthenticated() && 
+                      (request.auth.uid == resource.data.userId || isAdmin());
+      
+      // Users can delete their own bookings, admins can delete any
+      allow delete: if isAuthenticated() && 
+                      (request.auth.uid == resource.data.userId || isAdmin());
+    }
+    
+    // Analytics collection (admin only)
+    match /analytics/{document=**} {
+      allow read, write: if isAdmin();
+    }
+    
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

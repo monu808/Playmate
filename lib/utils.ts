@@ -4,6 +4,13 @@ import { PLATFORM_COMMISSION, RAZORPAY_FEE_PERCENTAGE } from './constants';
 import { PaymentBreakdown } from '../types';
 
 /**
+ * Format currency as Indian Rupees
+ */
+export function formatCurrency(amount: number): string {
+  return `₹${amount.toLocaleString('en-IN')}`;
+}
+
+/**
  * Calculate base turf amount (without commission)
  */
 export function calculateBaseTurfAmount(

@@ -1,7 +1,7 @@
 // TypeScript Type Definitions for Playmate App
 
 // Navigation types
-export interface RootStackParamList {
+export interface RootStackParamList extends Record<string, any> {
   Auth: undefined;
   Main: undefined;
   TurfDetail: { id: string };
@@ -15,14 +15,27 @@ export interface MainTabParamList {
   Profile: undefined;
 }
 
+// Sport types
+export type TurfSport = 'football' | 'cricket' | 'basketball' | 'badminton' | 'tennis' | 'volleyball';
+
 export interface User {
   uid: string;
-  name: string;
-  email: string;
+  name?: string;
+  email: string | null;
   role: 'user' | 'admin' | 'owner';
   createdAt: Date;
-  phoneNumber?: string;
-  photoURL?: string;
+  phoneNumber?: string | null;
+  photoURL?: string | null;
+  displayName?: string | null;
+  // Admin-specific fields
+  isAdmin?: boolean;
+  adminSince?: Date;
+  permissions?: {
+    manageTurfs: boolean;
+    manageBookings: boolean;
+    manageUsers: boolean;
+    viewAnalytics: boolean;
+  };
   // Owner-specific fields
   businessName?: string;
   phone?: string;
@@ -48,13 +61,17 @@ export interface Turf {
   id: string;
   name: string;
   description: string;
-  price: number;
+  sport: TurfSport;
+  price: number;                 // Legacy field
+  pricePerHour: number;         // New field
   images: string[];
   location: Location;
   amenities: string[];
   availableSlots: TimeSlot[];
   rating?: number;
   reviews?: number;
+  totalBookings?: number;
+  totalReviews?: number;
   createdAt: Date;
   ownerId?: string;
   ownerName?: string;

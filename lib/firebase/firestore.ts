@@ -23,15 +23,26 @@ import { Turf, Booking, User } from '../../types';
  */
 export const getTurfs = async (): Promise<Turf[]> => {
   try {
+    console.log('📡 Fetching turfs from Firestore...');
     const turfsCol = collection(db, 'turfs');
-    const q = query(turfsCol, where('isActive', '==', true));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as Turf[];
+    
+    // First try to get all turfs (remove isActive filter temporarily)
+    const snapshot = await getDocs(turfsCol);
+    console.log('📊 Total turfs in database:', snapshot.size);
+    
+    const turfs = snapshot.docs.map(doc => {
+      const data = doc.data();
+      console.log('🏟️ Turf found:', doc.id, data.name);
+      return {
+        id: doc.id,
+        ...data,
+      };
+    }) as Turf[];
+    
+    console.log('✅ Successfully fetched', turfs.length, 'turfs');
+    return turfs;
   } catch (error) {
-    console.error('Get turfs error:', error);
+    console.error('❌ Get turfs error:', error);
     return [];
   }
 };
@@ -41,14 +52,26 @@ export const getTurfs = async (): Promise<Turf[]> => {
  */
 export const getTurfById = async (id: string): Promise<Turf | null> => {
   try {
+    console.log('🔍 Fetching turf with ID:', id);
     const docRef = doc(db, 'turfs', id);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() } as Turf;
+      const data = docSnap.data();
+      console.log('✅ Turf found:', data);
+      
+      // Handle Timestamp conversion
+      const turfData = {
+        id: docSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate?.() || new Date(),
+      };
+      
+      return turfData as Turf;
     }
+    console.log('❌ Turf not found with ID:', id);
     return null;
   } catch (error) {
-    console.error('Get turf by ID error:', error);
+    console.error('❌ Get turf by ID error:', error);
     return null;
   }
 };
@@ -127,13 +150,19 @@ export const deleteTurf = async (id: string): Promise<{ success: boolean; error?
  */
 export const createBooking = async (bookingData: Omit<Booking, 'id'>): Promise<{ success: boolean; id?: string; error?: string }> => {
   try {
+    console.log('💾 Creating booking in Firestore...');
+    console.log('  Booking data:', JSON.stringify(bookingData, null, 2));
+    
     const docRef = await addDoc(collection(db, 'bookings'), {
       ...bookingData,
       createdAt: Timestamp.now(),
     });
+    
+    console.log('✅ Booking created successfully with ID:', docRef.id);
     return { success: true, id: docRef.id };
   } catch (error: any) {
-    console.error('Create booking error:', error);
+    console.error('❌ Create booking error:', error);
+    console.error('❌ Error message:', error.message);
     return { success: false, error: error.message };
   }
 };
@@ -181,19 +210,35 @@ export const getBookingById = async (id: string): Promise<Booking | null> => {
  */
 export const getTurfBookings = async (turfId: string, date: string): Promise<Booking[]> => {
   try {
+    console.log('🔍 Firestore Query - getTurfBookings called');
+    console.log('  turfId:', turfId);
+    console.log('  date:', date);
+    
     const q = query(
       collection(db, 'bookings'),
       where('turfId', '==', turfId),
       where('date', '==', date),
       where('status', 'in', ['confirmed', 'pending'])
     );
+    
+    console.log('  Executing Firestore query...');
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as Booking[];
+    console.log('  Query returned:', snapshot.docs.length, 'documents');
+    
+    const bookings = snapshot.docs.map(doc => {
+      const data = doc.data();
+      console.log('  Document:', doc.id, data);
+      return {
+        id: doc.id,
+        ...data,
+      };
+    }) as Booking[];
+    
+    console.log('✅ getTurfBookings returning:', bookings.length, 'bookings');
+    return bookings;
   } catch (error) {
-    console.error('Get turf bookings error:', error);
+    console.error('❌ Get turf bookings error:', error);
+    console.error('❌ Error details:', JSON.stringify(error, null, 2));
     return [];
   }
 };
@@ -239,6 +284,22 @@ export const getAllBookings = async (): Promise<Booking[]> => {
     })) as Booking[];
   } catch (error) {
     console.error('Get all bookings error:', error);
+    return [];
+  }
+};
+
+/**
+ * Get all users (admin only)
+ */
+export const getAllUsers = async (): Promise<any[]> => {
+  try {
+    const snapshot = await getDocs(collection(db, 'users'));
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error('Get all users error:', error);
     return [];
   }
 };
