@@ -22,6 +22,14 @@ export default function AdminDashboardScreen({ navigation }: any) {
 
   const adminFeatures = [
     {
+      id: 'scanner',
+      title: 'QR Scanner',
+      description: 'Verify booking check-ins',
+      icon: 'qr-code',
+      color: '#10b981',
+      screen: 'ScanQR',
+    },
+    {
       id: 'turfs',
       title: 'Manage Turfs',
       description: 'Add, edit, or remove turfs',

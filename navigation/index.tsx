@@ -21,6 +21,7 @@ import AdminBookingsScreen from '../screens/Admin/AdminBookingsScreen';
 import ManageUsersScreen from '../screens/Admin/ManageUsersScreen';
 import AnalyticsScreen from '../screens/Admin/AnalyticsScreen';
 import AddTurfScreen from '../screens/Admin/AddTurfScreenEnhanced';
+import ScanQRScreen from '../screens/Admin/ScanQRScreen';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -47,6 +48,7 @@ export type AdminStackParamList = {
   AdminBookings: undefined;
   ManageUsers: undefined;
   Analytics: undefined;
+  ScanQR: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -75,6 +77,7 @@ function AdminNavigator() {
       }}
     >
       <AdminStack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
+      <AdminStack.Screen name="ScanQR" component={ScanQRScreen} />
       <AdminStack.Screen name="ManageTurfs" component={ManageTurfsScreen} />
       <AdminStack.Screen name="AddTurf" component={AddTurfScreen} />
       <AdminStack.Screen name="AdminBookings" component={AdminBookingsScreen} />

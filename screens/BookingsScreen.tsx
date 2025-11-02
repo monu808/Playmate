@@ -14,7 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { getUserBookings, cancelBooking } from '../lib/firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { LoadingSpinner } from '../components/ui';
+import { LoadingSpinner, Modal } from '../components/ui';
+import { BookingQRCode } from '../components/BookingQRCode';
 import { formatCurrency, formatTime, getStatusColor } from '../lib/utils';
 import { Booking } from '../types';
 import { theme } from '../lib/theme';
@@ -28,6 +29,8 @@ const BookingsScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [showQRCode, setShowQRCode] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -194,15 +197,33 @@ const BookingsScreen: React.FC = () => {
           </View>
         )}
 
-        {canCancel && (
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => handleCancelBooking(item)}
-          >
-            <Ionicons name="close-circle" size={18} color="#ef4444" />
-            <Text style={styles.cancelButtonText}>Cancel Booking</Text>
-          </TouchableOpacity>
-        )}
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          {/* QR Code Button - Show for confirmed bookings */}
+          {item.status === 'confirmed' && (
+            <TouchableOpacity
+              style={styles.qrButton}
+              onPress={() => {
+                setSelectedBooking(item);
+                setShowQRCode(true);
+              }}
+            >
+              <Ionicons name="qr-code" size={20} color="white" />
+              <Text style={styles.qrButtonText}>Show QR Code</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Cancel Button */}
+          {canCancel && (
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => handleCancelBooking(item)}
+            >
+              <Ionicons name="close-circle" size={18} color="#ef4444" />
+              <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {item.status === 'cancelled' && (
           <View style={styles.cancelledNote}>
@@ -275,6 +296,31 @@ const BookingsScreen: React.FC = () => {
           </View>
         }
       />
+
+      {/* QR Code Modal */}
+      {selectedBooking && (
+        <Modal
+          visible={showQRCode}
+          onClose={() => {
+            setShowQRCode(false);
+            setSelectedBooking(null);
+          }}
+          title=""
+          showCloseButton={false}
+        >
+          <BookingQRCode
+            bookingId={selectedBooking.id}
+            turfName={selectedBooking.turfName}
+            date={format(new Date(selectedBooking.date), 'MMM dd, yyyy')}
+            time={`${formatTime(selectedBooking.startTime)} - ${formatTime(selectedBooking.endTime)}`}
+            userName={selectedBooking.userName}
+            onClose={() => {
+              setShowQRCode(false);
+              setSelectedBooking(null);
+            }}
+          />
+        </Modal>
+      )}
     </SafeAreaView>
   );
 };
@@ -415,14 +461,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
   },
-  cancelButton: {
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    padding: 12,
+  },
+  qrButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 12,
     gap: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    backgroundColor: '#16a34a',
+    borderRadius: 8,
+  },
+  qrButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
+  },
+  cancelButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    gap: 6,
+    backgroundColor: '#fee2e2',
+    borderRadius: 8,
   },
   cancelButtonText: {
     fontSize: 14,
