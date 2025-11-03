@@ -10,17 +10,48 @@ import {
   RefreshControl,
   Dimensions,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
+import MapView, { Marker, PROVIDER_GOOGLE, Callout } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { getTurfs } from '../lib/firebase/firestore';
 import { LoadingSpinner, Modal } from '../components/ui';
 import { colors, typography, spacing, borderRadius, shadows } from '../lib/theme';
 import { formatCurrency } from '../lib/utils';
 import { Turf, TurfSport } from '../types';
+
+// Calculate distance between two coordinates (Haversine formula)
+const calculateDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number => {
+  const R = 6371; // Radius of the Earth in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distance in km
+};
+
+// Format distance for display
+const formatDistance = (km: number): string => {
+  if (km < 1) {
+    return `${Math.round(km * 1000)}m`;
+  }
+  return `${km.toFixed(1)}km`;
+};
 
 const SPORT_FILTERS: { label: string; value: TurfSport | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -30,6 +61,26 @@ const SPORT_FILTERS: { label: string; value: TurfSport | 'all' }[] = [
   { label: 'Badminton', value: 'badminton' },
 ];
 
+// City locations in Madhya Pradesh
+const CITY_LOCATIONS = {
+  Sehore: {
+    latitude: 23.2041,
+    longitude: 77.0842,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  },
+};
+
+// Sport icons and colors
+const SPORT_MARKERS = {
+  football: { icon: 'football' as const, color: '#22c55e' },
+  cricket: { icon: 'baseball' as const, color: '#3b82f6' },
+  basketball: { icon: 'basketball' as const, color: '#f97316' },
+  badminton: { icon: 'tennisball' as const, color: '#a855f7' },
+  tennis: { icon: 'tennisball' as const, color: '#ec4899' },
+  volleyball: { icon: 'american-football' as const, color: '#eab308' },
+};
+
 export default function HomeScreen({ navigation }: any) {
   const [turfs, setTurfs] = useState<Turf[]>([]);
   const [filteredTurfs, setFilteredTurfs] = useState<Turf[]>([]);
@@ -37,6 +88,9 @@ export default function HomeScreen({ navigation }: any) {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSport, setSelectedSport] = useState<TurfSport | 'all'>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [selectedLocation] = useState<keyof typeof CITY_LOCATIONS>('Sehore');
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // Video player for header background
   const videoSource = require('../Intro.mp4');
@@ -57,11 +111,30 @@ export default function HomeScreen({ navigation }: any) {
 
   useEffect(() => {
     loadTurfs();
+    getUserLocation();
   }, []);
 
   useEffect(() => {
     filterTurfs();
   }, [turfs, searchQuery, selectedSport]);
+
+  const getUserLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Location permission denied');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+      setUserLocation({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+    } catch (error) {
+      console.error('Error getting location:', error);
+    }
+  };
 
   const loadTurfs = async () => {
     try {
@@ -186,59 +259,79 @@ export default function HomeScreen({ navigation }: any) {
     setFilteredTurfs(filtered);
   };
 
-  const renderTurfCard = ({ item }: { item: Turf }) => (
-    <TouchableOpacity
-      onPress={() => navigation.navigate('TurfDetail', { id: item.id })}
-      activeOpacity={0.7}
-      style={styles.turfCardWrapper}
-    >
-      <View style={styles.turfCard}>
-        <Image
-          source={{ uri: item.images?.[0] || 'https://via.placeholder.com/400x250' }}
-          style={styles.turfImage}
-          contentFit="cover"
-          transition={200}
-        />
-        <View style={styles.turfInfo}>
-          <View style={styles.turfHeader}>
-            <Text style={styles.turfName} numberOfLines={1}>
-              {item.name || 'Unnamed Turf'}
-            </Text>
-            {item.sport && (
-              <View style={styles.sportBadge}>
-                <Text style={styles.sportBadgeText}>
-                  {item.sport.charAt(0).toUpperCase() + item.sport.slice(1)}
-                </Text>
-              </View>
-            )}
-          </View>
+  const renderTurfCard = ({ item }: { item: Turf }) => {
+    // Calculate distance from user location
+    let distance: string | null = null;
+    if (userLocation && item.location?.lat && item.location?.lng) {
+      const distanceKm = calculateDistance(
+        userLocation.latitude,
+        userLocation.longitude,
+        item.location.lat,
+        item.location.lng
+      );
+      distance = formatDistance(distanceKm);
+    }
 
-          <View style={styles.locationRow}>
-            <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.location} numberOfLines={1}>
-              {item.location?.address || 'Location not available'}
-              {item.location?.city ? `, ${item.location.city}` : ''}
-            </Text>
-          </View>
-
-          <View style={styles.bottomRow}>
-            <View style={styles.ratingContainer}>
-              <Ionicons name="star" size={16} color="#FFA500" />
-              <Text style={styles.rating}>
-                {item.rating?.toFixed(1) || '5.0'}
+    return (
+      <TouchableOpacity
+        onPress={() => navigation.navigate('TurfDetail', { id: item.id })}
+        activeOpacity={0.7}
+        style={styles.turfCardWrapper}
+      >
+        <View style={styles.turfCard}>
+          <Image
+            source={{ uri: item.images?.[0] || 'https://via.placeholder.com/400x250' }}
+            style={styles.turfImage}
+            contentFit="cover"
+            transition={200}
+          />
+          {distance && (
+            <View style={styles.distanceBadge}>
+              <Ionicons name="navigate" size={12} color="#ffffff" />
+              <Text style={styles.distanceText}>{distance}</Text>
+            </View>
+          )}
+          <View style={styles.turfInfo}>
+            <View style={styles.turfHeader}>
+              <Text style={styles.turfName} numberOfLines={1}>
+                {item.name || 'Unnamed Turf'}
               </Text>
-              <Text style={styles.reviewCount}>
-                ({item.totalReviews || item.reviews || 0})
+              {item.sport && (
+                <View style={styles.sportBadge}>
+                  <Text style={styles.sportBadgeText}>
+                    {item.sport.charAt(0).toUpperCase() + item.sport.slice(1)}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.locationRow}>
+              <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.location} numberOfLines={1}>
+                {item.location?.address || 'Location not available'}
+                {item.location?.city ? `, ${item.location.city}` : ''}
               </Text>
             </View>
-            <Text style={styles.price}>
-              {formatCurrency(item.pricePerHour || item.price || 0)}/hr
-            </Text>
+
+            <View style={styles.bottomRow}>
+              <View style={styles.ratingContainer}>
+                <Ionicons name="star" size={16} color="#FFA500" />
+                <Text style={styles.rating}>
+                  {item.rating?.toFixed(1) || '5.0'}
+                </Text>
+                <Text style={styles.reviewCount}>
+                  ({item.totalReviews || item.reviews || 0})
+                </Text>
+              </View>
+              <Text style={styles.price}>
+                {formatCurrency(item.pricePerHour || item.price || 0)}/hr
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -297,6 +390,36 @@ export default function HomeScreen({ navigation }: any) {
         </View>
       </View>
 
+      {/* Location & View Mode Selector */}
+      <View style={styles.controlsSection}>
+        <View style={styles.locationSelector}>
+          <Ionicons name="location" size={18} color={colors.primary[600]} />
+          <Text style={styles.locationText}>{selectedLocation}</Text>
+        </View>
+        <View style={styles.viewToggle}>
+          <TouchableOpacity
+            style={[styles.viewButton, viewMode === 'list' && styles.viewButtonActive]}
+            onPress={() => setViewMode('list')}
+          >
+            <Ionicons 
+              name="list" 
+              size={20} 
+              color={viewMode === 'list' ? '#ffffff' : colors.gray[600]} 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.viewButton, viewMode === 'map' && styles.viewButtonActive]}
+            onPress={() => setViewMode('map')}
+          >
+            <Ionicons 
+              name="map" 
+              size={20} 
+              color={viewMode === 'map' ? '#ffffff' : colors.gray[600]} 
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* Sport Filters */}
       <View style={styles.filtersSection}>
         <ScrollView
@@ -326,7 +449,7 @@ export default function HomeScreen({ navigation }: any) {
         </ScrollView>
       </View>
 
-      {/* Turfs List */}
+      {/* Turfs List or Map */}
       {filteredTurfs.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="search-outline" size={64} color={colors.gray[300]} />
@@ -336,6 +459,84 @@ export default function HomeScreen({ navigation }: any) {
               ? 'Try adjusting your search or filters'
               : 'Check back later for new turfs'}
           </Text>
+        </View>
+      ) : viewMode === 'map' ? (
+        <View style={styles.mapContainer}>
+          <MapView
+            provider={PROVIDER_GOOGLE}
+            style={styles.map}
+            initialRegion={CITY_LOCATIONS[selectedLocation]}
+            showsUserLocation
+            showsMyLocationButton
+          >
+            {filteredTurfs.map((turf) => {
+              if (!turf.location?.lat || !turf.location?.lng) return null;
+
+              const sportMarker = SPORT_MARKERS[turf.sport] || SPORT_MARKERS.football;
+              
+              // Calculate distance from user
+              let distance: string | null = null;
+              if (userLocation) {
+                const distanceKm = calculateDistance(
+                  userLocation.latitude,
+                  userLocation.longitude,
+                  turf.location.lat,
+                  turf.location.lng
+                );
+                distance = formatDistance(distanceKm);
+              }
+
+              return (
+                <Marker
+                  key={turf.id}
+                  coordinate={{
+                    latitude: turf.location.lat,
+                    longitude: turf.location.lng,
+                  }}
+                >
+                  <View style={styles.markerContainer}>
+                    <View style={[styles.marker, { backgroundColor: sportMarker.color }]}>
+                      <Ionicons name={sportMarker.icon} size={20} color="#ffffff" />
+                    </View>
+                    <View style={[styles.markerArrow, { borderTopColor: sportMarker.color }]} />
+                  </View>
+                  <Callout tooltip onPress={() => navigation.navigate('TurfDetail', { id: turf.id })}>
+                    <TouchableOpacity 
+                      style={styles.calloutContainer}
+                      onPress={() => navigation.navigate('TurfDetail', { id: turf.id })}
+                      activeOpacity={0.9}
+                    >
+                      <Text style={styles.calloutTitle} numberOfLines={1}>{turf.name}</Text>
+                      <View style={styles.calloutRow}>
+                        <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                        <Text style={styles.calloutAddress} numberOfLines={1}>
+                          {turf.location.address}
+                        </Text>
+                      </View>
+                      <View style={styles.calloutRow}>
+                        <View style={styles.calloutRating}>
+                          <Ionicons name="star" size={14} color="#FFA500" />
+                          <Text style={styles.calloutRatingText}>
+                            {turf.rating?.toFixed(1) || '5.0'}
+                          </Text>
+                        </View>
+                        <Text style={styles.calloutPrice}>
+                          {formatCurrency(turf.pricePerHour || turf.price)}/hr
+                        </Text>
+                      </View>
+                      {distance && (
+                        <View style={styles.calloutDistance}>
+                          <Ionicons name="navigate" size={12} color={colors.primary[600]} />
+                          <Text style={styles.calloutDistanceText}>{distance} away</Text>
+                        </View>
+                      )}
+                      <Text style={styles.calloutTapHint}>Tap to view details</Text>
+                    </TouchableOpacity>
+                  </Callout>
+                </Marker>
+              );
+            })}
+          </MapView>
         </View>
       ) : (
         <FlatList
@@ -515,6 +716,25 @@ const styles = StyleSheet.create({
     height: 220,
     backgroundColor: colors.gray[200],
   },
+  distanceBadge: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(34, 197, 94, 0.95)',
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: borderRadius.full,
+    ...shadows.md,
+    elevation: 4,
+  },
+  distanceText: {
+    marginLeft: spacing.xs - 2,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.bold,
+    color: '#ffffff',
+  },
   turfInfo: {
     padding: spacing.lg,
   },
@@ -600,6 +820,184 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     fontSize: typography.fontSize.base,
     color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  // Location and view mode controls
+  controlsSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  locationSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    ...shadows.sm,
+    elevation: 2,
+  },
+  locationText: {
+    marginLeft: spacing.xs,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textPrimary,
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: borderRadius.lg,
+    ...shadows.sm,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  viewButton: {
+    paddingHorizontal: spacing.md + 2,
+    paddingVertical: spacing.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewButtonActive: {
+    backgroundColor: colors.primary[600],
+  },
+  // Map view styles
+  mapContainer: {
+    flex: 1,
+    backgroundColor: colors.backgroundSecondary,
+    padding: spacing.lg,
+  },
+  map: {
+    flex: 1,
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    ...shadows.lg,
+    elevation: 8,
+  },
+  markerContainer: {
+    alignItems: 'center',
+  },
+  marker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary[600],
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.lg,
+    elevation: 5,
+    borderWidth: 3,
+    borderColor: '#ffffff',
+  },
+  markerArrow: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: colors.primary[600],
+    marginTop: -1,
+  },
+  // Location picker modal styles
+  locationPickerContent: {
+    paddingVertical: spacing.sm,
+  },
+  locationOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.backgroundSecondary,
+  },
+  locationOptionActive: {
+    backgroundColor: colors.primary[50],
+    borderWidth: 2,
+    borderColor: colors.primary[600],
+  },
+  locationOptionText: {
+    flex: 1,
+    marginLeft: spacing.md,
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.medium,
+    color: colors.textPrimary,
+  },
+  locationOptionTextActive: {
+    color: colors.primary[700],
+    fontWeight: typography.fontWeight.bold,
+  },
+  // Map callout styles
+  calloutContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    minWidth: 200,
+    maxWidth: 250,
+    ...shadows.lg,
+    elevation: 8,
+  },
+  calloutTitle: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  calloutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  calloutAddress: {
+    flex: 1,
+    marginLeft: spacing.xs,
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+  },
+  calloutRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  calloutRatingText: {
+    marginLeft: spacing.xs - 2,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textPrimary,
+  },
+  calloutPrice: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.primary[600],
+  },
+  calloutDistance: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.gray[200],
+  },
+  calloutDistanceText: {
+    marginLeft: spacing.xs,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+    color: colors.primary[600],
+  },
+  calloutTapHint: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.gray[200],
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.primary[600],
     textAlign: 'center',
   },
 });

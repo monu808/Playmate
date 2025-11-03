@@ -14,7 +14,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Playmate needs your location to show nearby turfs and calculate distances.",
+        "NSLocationAlwaysUsageDescription": "Playmate needs your location to show nearby turfs and calculate distances."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,14 +26,31 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-video",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Playmate needs your location to show nearby turfs and calculate distances.",
+          "locationAlwaysPermission": "Playmate needs your location to show nearby turfs and calculate distances.",
+          "locationWhenInUsePermission": "Playmate needs your location to show nearby turfs and calculate distances."
+        }
+      ]
     ]
   }
 }
