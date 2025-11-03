@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { collection, getDocs, updateDoc, doc, Timestamp } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { signOut } from '../../lib/firebase/auth';
 import { colors, typography, spacing, borderRadius, shadows } from '../../lib/theme';
 
@@ -19,6 +21,50 @@ export default function AdminDashboardScreen({ navigation }: any) {
     totalUsers: 0,
     revenue: 0,
   });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  const loadStats = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch turfs
+      const turfsSnapshot = await getDocs(collection(db, 'turfs'));
+      const totalTurfs = turfsSnapshot.size;
+      
+      // Fetch bookings
+      const bookingsSnapshot = await getDocs(collection(db, 'bookings'));
+      const totalBookings = bookingsSnapshot.size;
+      
+      // Calculate revenue from bookings
+      let revenue = 0;
+      bookingsSnapshot.docs.forEach(doc => {
+        const booking = doc.data();
+        if (booking.status === 'completed' && booking.totalPrice) {
+          revenue += booking.totalPrice;
+        }
+      });
+      
+      // Fetch users
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const totalUsers = usersSnapshot.size;
+      
+      setStats({
+        totalTurfs,
+        totalBookings,
+        totalUsers,
+        revenue,
+      });
+      
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const adminFeatures = [
     {
@@ -83,6 +129,60 @@ export default function AdminDashboardScreen({ navigation }: any) {
     );
   };
 
+  const handleVerifyAllTurfs = async () => {
+    Alert.alert(
+      'Verify All Existing Turfs',
+      'This will mark all existing turfs as verified. This is a one-time migration for turfs created before the verification system. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Verify All',
+          onPress: async () => {
+            try {
+              // Get all turfs
+              const turfsCol = collection(db, 'turfs');
+              const snapshot = await getDocs(turfsCol);
+              
+              let updated = 0;
+              let alreadyVerified = 0;
+              
+              // Update each turf
+              for (const turfDoc of snapshot.docs) {
+                const data = turfDoc.data();
+                
+                // Check if already verified
+                if (data.isVerified === true) {
+                  alreadyVerified++;
+                  continue;
+                }
+                
+                // Update to verified
+                await updateDoc(doc(db, 'turfs', turfDoc.id), {
+                  isVerified: true,
+                  isActive: data.isActive !== undefined ? data.isActive : true,
+                  verifiedAt: Timestamp.now(),
+                  rejectionReason: null,
+                });
+                
+                updated++;
+              }
+              
+              Alert.alert(
+                'Success!',
+                `Migration complete!\n\n✅ Newly verified: ${updated}\n✓ Already verified: ${alreadyVerified}\n📊 Total turfs: ${snapshot.size}`,
+                [{ text: 'OK' }]
+              );
+              
+            } catch (error) {
+              console.error('Migration error:', error);
+              Alert.alert('Error', 'Failed to verify turfs. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -92,9 +192,22 @@ export default function AdminDashboardScreen({ navigation }: any) {
             <Text style={styles.greeting}>Admin Dashboard</Text>
             <Text style={styles.subGreeting}>Manage your turf booking platform</Text>
           </View>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={24} color={colors.error} />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.refreshButton} 
+              onPress={loadStats}
+              disabled={loading}
+            >
+              <Ionicons 
+                name="refresh" 
+                size={24} 
+                color={colors.primary[600]} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={24} color={colors.error} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Stats Cards */}
@@ -127,7 +240,9 @@ export default function AdminDashboardScreen({ navigation }: any) {
             <View style={[styles.statIconContainer, { backgroundColor: '#fef3c7' }]}>
               <Ionicons name="cash" size={24} color="#f59e0b" />
             </View>
-            <Text style={styles.statValue}>₹{stats.revenue}</Text>
+            <Text style={styles.statValue}>
+              ₹{stats.revenue.toLocaleString('en-IN')}
+            </Text>
             <Text style={styles.statLabel}>Revenue</Text>
           </View>
         </View>
@@ -167,6 +282,22 @@ export default function AdminDashboardScreen({ navigation }: any) {
           </TouchableOpacity>
 
           <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: '#f59e0b' }]}
+            onPress={() => navigation.navigate('PendingTurfs')}
+          >
+            <Ionicons name="time" size={24} color="#ffffff" />
+            <Text style={styles.actionButtonText}>Verify Pending Turfs</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: '#8b5cf6' }]}
+            onPress={handleVerifyAllTurfs}
+          >
+            <Ionicons name="checkmark-done" size={24} color="#ffffff" />
+            <Text style={styles.actionButtonText}>Verify All Existing Turfs</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: '#3b82f6' }]}
             onPress={() => navigation.navigate('AdminBookings')}
           >
@@ -201,6 +332,14 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     color: colors.textSecondary,
     marginTop: spacing.xs,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  refreshButton: {
+    padding: spacing.sm,
   },
   logoutButton: {
     padding: spacing.sm,

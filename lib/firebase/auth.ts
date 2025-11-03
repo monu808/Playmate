@@ -107,7 +107,9 @@ export const signUp = async (
   email: string,
   password: string,
   name: string,
-  phoneNumber?: string
+  phoneNumber?: string,
+  role: 'user' | 'owner' = 'user',
+  businessName?: string
 ) => {
   try {
     // Create auth user
@@ -120,16 +122,23 @@ export const signUp = async (
     });
 
     // Create user document in Firestore
-    await setDoc(doc(db, 'users', user.uid), {
+    const userData: any = {
       uid: user.uid,
-      name,
+      displayName: name,
       email,
       phoneNumber: phoneNumber || '',
-      role: 'user',
+      role,
       createdAt: new Date(),
-    });
+    };
 
-    // Initialize admin if email is in admin list
+    // Add business name for owners
+    if (role === 'owner' && businessName) {
+      userData.businessName = businessName;
+    }
+
+    await setDoc(doc(db, 'users', user.uid), userData);
+
+    // Initialize admin if email is in admin list (overrides role selection)
     await initializeAdminUser(user.uid, email);
 
     return { success: true, user };

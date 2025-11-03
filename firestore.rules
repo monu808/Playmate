@@ -14,10 +14,20 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     
+    function isOwner(ownerId) {
+      return isAuthenticated() && request.auth.uid == ownerId;
+    }
+    
+    function isOwnerRole() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner';
+    }
+    
     // Users collection
     match /users/{userId} {
-      // Users can read their own data, admins can read all
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      // Users can read their own data and public profiles, admins can read all
+      allow read: if isAuthenticated();
       // Users can create/update their own profile
       allow create, update: if isAuthenticated() && request.auth.uid == userId;
       // Only admins can delete users
@@ -26,9 +36,21 @@ service cloud.firestore {
     
     // Turfs collection
     match /turfs/{turfId} {
-      // Everyone can read turfs (for browsing)
-      allow read: if true;
-      // Only admins can create, update, or delete turfs
+      // Everyone authenticated can read turfs (for browsing)
+      allow read: if isAuthenticated();
+      
+      // Owners can create turfs (must set ownerId to their own uid, isVerified=false)
+      allow create: if isOwnerRole() && 
+                      request.resource.data.ownerId == request.auth.uid &&
+                      request.resource.data.isVerified == false;
+      
+      // Owners can update their own turfs (but cannot change isVerified status)
+      allow update: if isAuthenticated() && 
+                      resource.data.ownerId == request.auth.uid &&
+                      request.resource.data.ownerId == resource.data.ownerId &&
+                      request.resource.data.isVerified == resource.data.isVerified;
+      
+      // Admins can create, update (including verification), or delete any turf
       allow create, update, delete: if isAdmin();
     }
     
@@ -42,9 +64,14 @@ service cloud.firestore {
       allow create: if isAuthenticated() && 
                       request.auth.uid == request.resource.data.userId;
       
-      // Users can update their own bookings, admins can update any
+      // Users can update their own bookings
+      // Owners can update bookings for their turfs (check turf ownership)
+      // Admins can update any booking
       allow update: if isAuthenticated() && 
-                      (request.auth.uid == resource.data.userId || isAdmin());
+                      (request.auth.uid == resource.data.userId || 
+                       (exists(/databases/$(database)/documents/turfs/$(resource.data.turfId)) &&
+                        get(/databases/$(database)/documents/turfs/$(resource.data.turfId)).data.ownerId == request.auth.uid) ||
+                       isAdmin());
       
       // Users can delete their own bookings, admins can delete any
       allow delete: if isAuthenticated() && 

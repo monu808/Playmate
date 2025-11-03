@@ -29,13 +29,22 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA"
       ],
       "config": {
         "googleMaps": {
           "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
         }
-      }
+      },
+      "package": "com.monu80850.PlaymateApp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -50,7 +59,8 @@
           "locationAlwaysPermission": "Playmate needs your location to show nearby turfs and calculate distances.",
           "locationWhenInUsePermission": "Playmate needs your location to show nearby turfs and calculate distances."
         }
-      ]
+      ],
+      "expo-barcode-scanner"
     ]
   }
 }

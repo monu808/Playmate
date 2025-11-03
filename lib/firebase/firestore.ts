@@ -26,9 +26,15 @@ export const getTurfs = async (): Promise<Turf[]> => {
     console.log('📡 Fetching turfs from Firestore...');
     const turfsCol = collection(db, 'turfs');
     
-    // First try to get all turfs (remove isActive filter temporarily)
-    const snapshot = await getDocs(turfsCol);
-    console.log('📊 Total turfs in database:', snapshot.size);
+    // Query only verified and active turfs for regular users
+    const q = query(
+      turfsCol,
+      where('isVerified', '==', true),
+      where('isActive', '==', true)
+    );
+    
+    const snapshot = await getDocs(q);
+    console.log('📊 Verified turfs in database:', snapshot.size);
     
     const turfs = snapshot.docs.map(doc => {
       const data = doc.data();
@@ -39,7 +45,7 @@ export const getTurfs = async (): Promise<Turf[]> => {
       };
     }) as Turf[];
     
-    console.log('✅ Successfully fetched', turfs.length, 'turfs');
+    console.log('✅ Successfully fetched', turfs.length, 'verified turfs');
     return turfs;
   } catch (error) {
     console.error('❌ Get turfs error:', error);

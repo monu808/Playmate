@@ -6,6 +6,7 @@ export interface RootStackParamList extends Record<string, any> {
   Main: undefined;
   TurfDetail: { id: string };
   Admin: undefined;
+  Owner: undefined;
 }
 
 export interface MainTabParamList {
@@ -13,6 +14,14 @@ export interface MainTabParamList {
   Bookings: undefined;
   Explore: undefined;
   Profile: undefined;
+}
+
+export interface OwnerTabParamList {
+  OwnerDashboard: undefined;
+  MyTurfs: undefined;
+  OwnerBookings: undefined;
+  OwnerAnalytics: undefined;
+  OwnerProfile: undefined;
 }
 
 // Sport types
@@ -73,11 +82,16 @@ export interface Turf {
   totalBookings?: number;
   totalReviews?: number;
   createdAt: Date;
-  ownerId?: string;
-  ownerName?: string;
-  ownerEmail?: string;
+  ownerId: string;
+  ownerName: string;
+  ownerEmail: string;
+  ownerPhone?: string;
   ownerRazorpayId?: string;
-  isActive?: boolean;
+  isActive: boolean;
+  isVerified: boolean;           // Admin verification status
+  verifiedAt?: Date;
+  verifiedBy?: string;           // Admin ID who verified
+  rejectionReason?: string;      // If rejected by admin
 }
 
 export interface Booking {

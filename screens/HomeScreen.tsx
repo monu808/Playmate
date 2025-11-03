@@ -122,7 +122,7 @@ export default function HomeScreen({ navigation }: any) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        console.log('Location permission denied');
+        console.log('📍 Location permission not granted (optional feature)');
         return;
       }
 
@@ -131,8 +131,9 @@ export default function HomeScreen({ navigation }: any) {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
       });
+      console.log('📍 User location obtained successfully');
     } catch (error) {
-      console.error('Error getting location:', error);
+      console.error('📍 Error getting location:', error);
     }
   };
 
@@ -144,7 +145,7 @@ export default function HomeScreen({ navigation }: any) {
       
       // If no turfs from database, show sample data for testing
       if (!fetchedTurfs || fetchedTurfs.length === 0) {
-        console.log('⚠️ No turfs in database, showing sample data');
+        console.log('⚠️ No verified turfs in database, showing sample data');
         const sampleTurfs: Turf[] = [
           {
             id: '1',
@@ -168,6 +169,11 @@ export default function HomeScreen({ navigation }: any) {
             totalReviews: 45,
             createdAt: new Date(),
             isActive: true,
+            ownerId: 'sample-owner-1',
+            ownerName: 'Sample Owner',
+            ownerEmail: 'owner@example.com',
+            ownerPhone: '+91-9876543210',
+            isVerified: true,
           },
           {
             id: '2',
@@ -191,6 +197,11 @@ export default function HomeScreen({ navigation }: any) {
             totalReviews: 32,
             createdAt: new Date(),
             isActive: true,
+            ownerId: 'sample-owner-2',
+            ownerName: 'Sample Owner 2',
+            ownerEmail: 'owner2@example.com',
+            ownerPhone: '+91-9876543211',
+            isVerified: true,
           },
           {
             id: '3',
@@ -214,6 +225,11 @@ export default function HomeScreen({ navigation }: any) {
             totalReviews: 67,
             createdAt: new Date(),
             isActive: true,
+            ownerId: 'sample-owner-3',
+            ownerName: 'Sample Owner 3',
+            ownerEmail: 'owner3@example.com',
+            ownerPhone: '+91-9876543212',
+            isVerified: true,
           },
         ];
         setTurfs(sampleTurfs);

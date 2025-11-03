@@ -8,13 +8,17 @@ import { useAuth } from '../contexts/AuthContext';
 import { LoadingSpinner } from '../components/ui';
 import { isAdmin } from '../lib/firebase/admin';
 
-// Screens
+// User Screens
 import HomeScreen from '../screens/HomeScreen';
 import TurfDetailScreen from '../screens/TurfDetailScreen';
 import BookingsScreen from '../screens/BookingsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+
+// Auth Screens
 import LoginScreen from '../screens/Auth/LoginScreen';
 import SignupScreen from '../screens/Auth/SignupScreen';
+
+// Admin Screens
 import AdminDashboardScreen from '../screens/Admin/AdminDashboardScreen';
 import ManageTurfsScreen from '../screens/Admin/ManageTurfsScreen';
 import AdminBookingsScreen from '../screens/Admin/AdminBookingsScreen';
@@ -22,11 +26,20 @@ import ManageUsersScreen from '../screens/Admin/ManageUsersScreen';
 import AnalyticsScreen from '../screens/Admin/AnalyticsScreen';
 import AddTurfScreen from '../screens/Admin/AddTurfScreenEnhanced';
 import ScanQRScreen from '../screens/Admin/ScanQRScreen';
+import PendingTurfsScreen from '../screens/Admin/PendingTurfsScreen';
+
+// Owner Screens
+import OwnerDashboardScreen from '../screens/Owner/OwnerDashboardScreen';
+import MyTurfsScreen from '../screens/Owner/MyTurfsScreen';
+import AddOwnerTurfScreen from '../screens/Owner/AddTurfScreen';
+import OwnerBookingsScreen from '../screens/Owner/OwnerBookingsScreen';
+import OwnerScanQRScreen from '../screens/Owner/OwnerScanQRScreen';
 
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
   Admin: undefined;
+  Owner: undefined;
   TurfDetail: { turfId: string };
 };
 
@@ -51,10 +64,18 @@ export type AdminStackParamList = {
   ScanQR: undefined;
 };
 
+export type OwnerTabParamList = {
+  OwnerDashboard: undefined;
+  MyTurfs: undefined;
+  OwnerBookings: undefined;
+  OwnerProfile: undefined;
+};
+
 const Stack = createStackNavigator<RootStackParamList>();
 const AuthStack = createStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 const AdminStack = createStackNavigator<AdminStackParamList>();
+const OwnerTab = createBottomTabNavigator<OwnerTabParamList>();
 
 function AuthNavigator() {
   return (
@@ -79,11 +100,62 @@ function AdminNavigator() {
       <AdminStack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
       <AdminStack.Screen name="ScanQR" component={ScanQRScreen} />
       <AdminStack.Screen name="ManageTurfs" component={ManageTurfsScreen} />
+      <AdminStack.Screen name="PendingTurfs" component={PendingTurfsScreen} />
       <AdminStack.Screen name="AddTurf" component={AddTurfScreen} />
       <AdminStack.Screen name="AdminBookings" component={AdminBookingsScreen} />
       <AdminStack.Screen name="ManageUsers" component={ManageUsersScreen} />
       <AdminStack.Screen name="Analytics" component={AnalyticsScreen} />
     </AdminStack.Navigator>
+  );
+}
+
+function OwnerTabs() {
+  return (
+    <OwnerTab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName: keyof typeof Ionicons.glyphMap;
+
+          if (route.name === 'OwnerDashboard') {
+            iconName = focused ? 'grid' : 'grid-outline';
+          } else if (route.name === 'MyTurfs') {
+            iconName = focused ? 'football' : 'football-outline';
+          } else if (route.name === 'OwnerBookings') {
+            iconName = focused ? 'calendar' : 'calendar-outline';
+          } else if (route.name === 'OwnerProfile') {
+            iconName = focused ? 'person' : 'person-outline';
+          } else {
+            iconName = 'help-outline';
+          }
+
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: '#10b981',
+        tabBarInactiveTintColor: 'gray',
+        headerShown: false,
+      })}
+    >
+      <OwnerTab.Screen 
+        name="OwnerDashboard" 
+        component={OwnerDashboardScreen}
+        options={{ tabBarLabel: 'Dashboard' }}
+      />
+      <OwnerTab.Screen 
+        name="MyTurfs" 
+        component={MyTurfsScreen}
+        options={{ tabBarLabel: 'My Turfs' }}
+      />
+      <OwnerTab.Screen 
+        name="OwnerBookings" 
+        component={OwnerBookingsScreen}
+        options={{ tabBarLabel: 'Bookings' }}
+      />
+      <OwnerTab.Screen 
+        name="OwnerProfile" 
+        component={ProfileScreen}
+        options={{ tabBarLabel: 'Profile' }}
+      />
+    </OwnerTab.Navigator>
   );
 }
 
@@ -119,32 +191,33 @@ function MainTabs() {
 }
 
 export default function Navigation() {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, loading, user, userData } = useAuth();
   const [userIsAdmin, setUserIsAdmin] = useState(false);
-  const [checkingAdmin, setCheckingAdmin] = useState(true);
+  const [checkingRole, setCheckingRole] = useState(true);
 
-  // Check if user is admin
+  // Check user role
   useEffect(() => {
-    async function checkAdminStatus() {
-      if (user?.uid) {
+    async function checkUserRole() {
+      if (user?.uid && userData) {
+        // Check if user is admin
         const adminStatus = await isAdmin(user.uid);
         setUserIsAdmin(adminStatus);
       } else {
         setUserIsAdmin(false);
       }
-      setCheckingAdmin(false);
+      setCheckingRole(false);
     }
 
     if (isAuthenticated && user) {
-      checkAdminStatus();
+      checkUserRole();
     } else {
-      setCheckingAdmin(false);
+      setCheckingRole(false);
       setUserIsAdmin(false);
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, userData]);
 
   // Show loading screen while checking auth state
-  if (loading || checkingAdmin) {
+  if (loading || checkingRole) {
     return (
       <View style={styles.loadingContainer}>
         <LoadingSpinner size="large" />
@@ -152,18 +225,47 @@ export default function Navigation() {
     );
   }
 
+  // Determine user role
+  const getUserRole = () => {
+    if (!isAuthenticated || !userData) return 'guest';
+    if (userIsAdmin || userData.role === 'admin') return 'admin';
+    if (userData.role === 'owner') return 'owner';
+    return 'user';
+  };
+
+  const role = getUserRole();
+
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
-        ) : userIsAdmin ? (
+        ) : role === 'admin' ? (
           <>
             <Stack.Screen name="Admin" component={AdminNavigator} />
             <Stack.Screen 
               name="TurfDetail" 
               component={TurfDetailScreen}
               options={{ headerShown: true, title: 'Turf Details' }}
+            />
+          </>
+        ) : role === 'owner' ? (
+          <>
+            <Stack.Screen name="Owner" component={OwnerTabs} />
+            <Stack.Screen 
+              name="TurfDetail" 
+              component={TurfDetailScreen}
+              options={{ headerShown: true, title: 'Turf Details' }}
+            />
+            <Stack.Screen 
+              name="AddTurf" 
+              component={AddOwnerTurfScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="OwnerScanQR" 
+              component={OwnerScanQRScreen}
+              options={{ headerShown: false }}
             />
           </>
         ) : (
