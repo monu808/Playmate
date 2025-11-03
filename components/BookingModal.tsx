@@ -125,10 +125,13 @@ const BookingModal: React.FC<BookingModalProps> = ({
     console.log(`🔎 Current bookedSlots state:`, bookedSlots);
     
     // Check if this time overlaps with any booked slots
+    // A time slot is booked if it falls within a booked range (excluding the end time)
+    // Example: If 20:00-21:00 is booked, 20:00 is locked but 21:00 is available for next booking
     const isBooked = bookedSlots.some((slot) => {
       const [bookedStart, bookedEnd] = slot.split('-');
       console.log(`  Comparing ${time} with slot ${bookedStart}-${bookedEnd}`);
-      // A time slot is booked if it falls within any booked range
+      // Only lock times that are actually being used in the booked slot
+      // time >= bookedStart && time < bookedEnd ensures end time is available for next slot
       const result = time >= bookedStart && time < bookedEnd;
       if (result) {
         console.log(`  ✅ MATCH: Time ${time} is booked (slot: ${slot})`);
@@ -238,14 +241,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
           // Payment successful
           console.log('Payment success:', data);
           
-          // Show mock payment alert in Expo Go
-          Alert.alert(
-            '🎉 Mock Payment Success',
-            'In Expo Go, payments are simulated. In production build with react-native-razorpay, real payments will be processed.',
-            [{ text: 'Continue' }]
-          );
-
-          // Create booking
+          // Create booking (payment simulated in Expo Go)
           const bookingData = {
             userId: user.uid,
             userName: user.displayName || 'User',
@@ -271,20 +267,12 @@ const BookingModal: React.FC<BookingModalProps> = ({
             // Reload booked slots to show the newly booked slot as locked
             await loadBookedSlots();
             
-            Alert.alert(
-              'Success!',
-              'Your booking has been confirmed successfully!',
-              [{ 
-                text: 'OK', 
-                onPress: () => {
-                  onBookingSuccess();
-                  // Reset selections after successful booking
-                  setStartTime(null);
-                  setEndTime(null);
-                  setAgreedToTerms(false);
-                }
-              }]
-            );
+            // Success handled by parent screen's onBookingSuccess callback
+            onBookingSuccess();
+            // Reset selections after successful booking
+            setStartTime(null);
+            setEndTime(null);
+            setAgreedToTerms(false);
           } else {
             Alert.alert('Error', result.error || 'Failed to create booking');
           }
@@ -446,9 +434,12 @@ const BookingModal: React.FC<BookingModalProps> = ({
           >
             <View style={styles.timeSlotRow}>
               {TIME_SLOTS.map((slot, index) => {
+                // For end time, show the endTime of each slot (not startTime)
+                // This ensures user selects actual end time, not another start time
+                const timeToShow = slot.endTime;
                 const isBooked = isTimeSlotBooked(slot.startTime);
-                const isSelected = endTime === slot.startTime;
-                const isDisabled = !startTime || slot.startTime <= startTime;
+                const isSelected = endTime === timeToShow;
+                const isDisabled = !startTime || timeToShow <= startTime;
 
                 return (
                   <TouchableOpacity
@@ -459,7 +450,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
                       isSelected && styles.timeSlotSelectedEnd,
                       isDisabled && styles.timeSlotDisabled,
                     ]}
-                    onPress={() => handleEndTimeSelect(slot.startTime)}
+                    onPress={() => handleEndTimeSelect(timeToShow)}
                     disabled={isBooked || isDisabled}
                   >
                     <Text
@@ -470,7 +461,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
                         isDisabled && styles.timeSlotTextDisabled,
                       ]}
                     >
-                      {formatTime(slot.startTime)}
+                      {formatTime(timeToShow)}
                     </Text>
                     {isBooked && (
                       <View style={styles.bookedIndicator}>
@@ -638,7 +629,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 12,
   },
   dateContainer: {
     flexDirection: 'row',
@@ -840,6 +830,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 24,
   },
   bookButtonDisabled: {
     backgroundColor: '#9ca3af',

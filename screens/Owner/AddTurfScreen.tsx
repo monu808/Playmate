@@ -8,29 +8,48 @@ import {
   Alert,
   Platform,
   Image,
-  Modal,
-  Dimensions,
-  Animated,
   TextInput,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Button, Input } from '../../components/ui';
-import { colors, typography, spacing, borderRadius } from '../../lib/theme';
+import { MapPicker } from '../../components/MapPicker';
+import { colors, typography, spacing, borderRadius, shadows } from '../../lib/theme';
 import { createOwnerTurf } from '../../lib/firebase/owner';
 import { useAuth } from '../../contexts/AuthContext';
 import { TurfSport } from '../../types';
 
 const { width, height } = Dimensions.get('window');
 
+// Sport options with icons
+const SPORTS_OPTIONS: { value: TurfSport; label: string; icon: string }[] = [
+  { value: 'football', label: 'Football', icon: 'football' },
+  { value: 'cricket', label: 'Cricket', icon: 'baseball' },
+  { value: 'basketball', label: 'Basketball', icon: 'basketball' },
+  { value: 'badminton', label: 'Badminton', icon: 'tennisball' },
+  { value: 'tennis', label: 'Tennis', icon: 'tennisball' },
+  { value: 'volleyball', label: 'Volleyball', icon: 'baseball' },
+];
+
+const AMENITIES_OPTIONS = [
+  'Parking',
+  'Drinking Water',
+  'Seating Area',
+  'Equipment Storage',
+  'Changing Rooms',
+  'First Aid',
+  'Flood Lights',
+  'Washrooms',
+  'CCTV',
+  'Refreshments',
+];
+
 
 export default function AddTurfScreen({ navigation }: any) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
-  const mapRef = useRef<MapView>(null);
-  const markerScale = useRef(new Animated.Value(1)).current;
   
   const [formData, setFormData] = useState({
     name: '',
@@ -38,8 +57,10 @@ export default function AddTurfScreen({ navigation }: any) {
     pricePerHour: '',
     address: '',
     city: 'Sehore',
-    sport: 'football' as TurfSport,
   });
+  
+  // Multiple sports selection
+  const [selectedSports, setSelectedSports] = useState<TurfSport[]>(['football']);
   
   // Location state
   const [selectedLocation, setSelectedLocation] = useState({
@@ -47,25 +68,10 @@ export default function AddTurfScreen({ navigation }: any) {
     longitude: 77.0842,
   });
   const [showMapModal, setShowMapModal] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
   
   const [images, setImages] = useState<string[]>([]);
   const [amenities, setAmenities] = useState<string[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
-
-  const sports: { value: TurfSport; label: string; icon: string }[] = [
-    { value: 'football', label: 'Football', icon: 'football' },
-    { value: 'cricket', label: 'Cricket', icon: 'baseball' },
-    { value: 'basketball', label: 'Basketball', icon: 'basketball' },
-    { value: 'badminton', label: 'Badminton', icon: 'tennisball' },
-    { value: 'tennis', label: 'Tennis', icon: 'tennisball' },
-    { value: 'volleyball', label: 'Volleyball', icon: 'baseball' },
-  ];
-
-  const availableAmenities = [
-    'Parking', 'Washroom', 'Changing Room', 'Drinking Water',
-    'First Aid', 'Seating', 'Lighting', 'Equipment',
-  ];
 
   const updateField = (field: string, value: string) => {
     setFormData({ ...formData, [field]: value });
@@ -73,6 +79,25 @@ export default function AddTurfScreen({ navigation }: any) {
       const newErrors = { ...errors };
       delete newErrors[field];
       setErrors(newErrors);
+    }
+  };
+
+  const toggleSport = (sport: TurfSport) => {
+    if (selectedSports.includes(sport)) {
+      // Don't allow removing all sports
+      if (selectedSports.length > 1) {
+        setSelectedSports(selectedSports.filter(s => s !== sport));
+      }
+    } else {
+      setSelectedSports([...selectedSports, sport]);
+    }
+  };
+
+  const toggleAmenity = (amenity: string) => {
+    if (amenities.includes(amenity)) {
+      setAmenities(amenities.filter(a => a !== amenity));
+    } else {
+      setAmenities([...amenities, amenity]);
     }
   };
 
@@ -102,75 +127,6 @@ export default function AddTurfScreen({ navigation }: any) {
 
   const removeImage = (index: number) => {
     setImages(images.filter((_, i) => i !== index));
-  };
-
-  const toggleAmenity = (amenity: string) => {
-    if (amenities.includes(amenity)) {
-      setAmenities(amenities.filter(a => a !== amenity));
-    } else {
-      setAmenities([...amenities, amenity]);
-    }
-  };
-
-  // Map Functions
-  const animateMarker = () => {
-    Animated.sequence([
-      Animated.timing(markerScale, {
-        toValue: 1.3,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-      Animated.timing(markerScale, {
-        toValue: 1,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const handleMapPress = (event: any) => {
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    setSelectedLocation({ latitude, longitude });
-    animateMarker();
-    
-    mapRef.current?.animateToRegion(
-      {
-        latitude,
-        longitude,
-        latitudeDelta: 0.0922,
-        longitudeDelta: 0.0421,
-      },
-      300
-    );
-  };
-
-  const handleMarkerDragEnd = (event: any) => {
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    setSelectedLocation({ latitude, longitude });
-    animateMarker();
-  };
-
-  const confirmLocation = () => {
-    setShowMapModal(false);
-    setMapReady(false);
-  };
-
-  const handleMapReady = () => {
-    setMapReady(true);
-  };
-
-  const centerOnLocation = () => {
-    if (mapRef.current) {
-      mapRef.current.animateToRegion(
-        {
-          latitude: selectedLocation.latitude,
-          longitude: selectedLocation.longitude,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
-        },
-        500
-      );
-    }
   };
 
   const validateForm = () => {
@@ -205,10 +161,17 @@ export default function AddTurfScreen({ navigation }: any) {
 
     setLoading(true);
     try {
+      // Use the first selected sport as primary, store all in amenities or description
+      const primarySport = selectedSports[0];
+      const sportsInfo = selectedSports.length > 1 
+        ? `Available for: ${selectedSports.join(', ')}` 
+        : '';
+
       const turfData = {
         name: formData.name.trim(),
-        description: formData.description.trim(),
-        sport: formData.sport,
+        description: `${formData.description.trim()}${sportsInfo ? '\n' + sportsInfo : ''}`,
+        sport: primarySport,
+        sports: selectedSports, // Store all selected sports
         price: parseFloat(formData.pricePerHour), // Legacy field
         pricePerHour: parseFloat(formData.pricePerHour),
         images: images,
@@ -320,24 +283,24 @@ export default function AddTurfScreen({ navigation }: any) {
           />
         </View>
 
-        {/* Sport Type */}
+        {/* Sport Type - Multiple Selection */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Sport Type</Text>
+          <Text style={styles.sectionTitle}>Sport Types (Select Multiple)</Text>
           <View style={styles.sportGrid}>
-            {sports.map((sport) => (
+            {SPORTS_OPTIONS.map((sport) => (
               <TouchableOpacity
                 key={sport.value}
                 style={[
                   styles.sportCard,
-                  formData.sport === sport.value && styles.sportCardActive,
+                  selectedSports.includes(sport.value) && styles.sportCardActive,
                 ]}
-                onPress={() => updateField('sport', sport.value)}
+                onPress={() => toggleSport(sport.value)}
               >
                 <Ionicons
                   name={sport.icon as any}
                   size={32}
                   color={
-                    formData.sport === sport.value
+                    selectedSports.includes(sport.value)
                       ? colors.primary[600]
                       : colors.gray[500]
                   }
@@ -345,14 +308,22 @@ export default function AddTurfScreen({ navigation }: any) {
                 <Text
                   style={[
                     styles.sportLabel,
-                    formData.sport === sport.value && styles.sportLabelActive,
+                    selectedSports.includes(sport.value) && styles.sportLabelActive,
                   ]}
                 >
                   {sport.label}
                 </Text>
+                {selectedSports.includes(sport.value) && (
+                  <View style={styles.selectedBadge}>
+                    <Ionicons name="checkmark-circle" size={20} color="white" />
+                  </View>
+                )}
               </TouchableOpacity>
             ))}
           </View>
+          <Text style={styles.helpText}>
+            {selectedSports.length} sport(s) selected
+          </Text>
         </View>
 
         {/* Images */}
@@ -432,9 +403,9 @@ export default function AddTurfScreen({ navigation }: any) {
 
         {/* Amenities */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Amenities</Text>
+          <Text style={styles.sectionTitle}>Amenities (Optional)</Text>
           <View style={styles.amenitiesGrid}>
-            {availableAmenities.map((amenity) => (
+            {AMENITIES_OPTIONS.map((amenity) => (
               <TouchableOpacity
                 key={amenity}
                 style={[
@@ -443,6 +414,11 @@ export default function AddTurfScreen({ navigation }: any) {
                 ]}
                 onPress={() => toggleAmenity(amenity)}
               >
+                <Ionicons
+                  name={amenities.includes(amenity) ? 'checkmark-circle' : 'add-circle-outline'}
+                  size={18}
+                  color={amenities.includes(amenity) ? colors.primary[600] : colors.gray[500]}
+                />
                 <Text
                   style={[
                     styles.amenityText,
@@ -456,99 +432,25 @@ export default function AddTurfScreen({ navigation }: any) {
           </View>
         </View>
 
-        <Button
-          text="Submit for Verification"
-          onPress={handleSubmit}
-          loading={loading}
-          disabled={loading}
-          fullWidth
-          style={styles.submitBtn}
-        />
+        {/* Submit Button */}
+        <View style={styles.submitContainer}>
+          <Button
+            text="Submit for Verification"
+            onPress={handleSubmit}
+            loading={loading}
+            disabled={loading}
+            fullWidth
+          />
+        </View>
       </ScrollView>
 
-      {/* Map Modal */}
-      <Modal
+      {/* Map Picker Modal */}
+      <MapPicker
         visible={showMapModal}
-        animationType="slide"
-        onRequestClose={() => setShowMapModal(false)}
-      >
-        <SafeAreaView style={styles.mapModal}>
-          {/* Map Header */}
-          <View style={styles.mapHeader}>
-            <TouchableOpacity
-              style={styles.mapCloseButton}
-              onPress={() => setShowMapModal(false)}
-            >
-              <Ionicons name="close" size={24} color={colors.textPrimary} />
-            </TouchableOpacity>
-            <Text style={styles.mapHeaderTitle}>Select Turf Location</Text>
-            <TouchableOpacity
-              style={styles.mapCenterButton}
-              onPress={centerOnLocation}
-            >
-              <Ionicons name="locate" size={24} color={colors.primary[600]} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Map View */}
-          <MapView
-            ref={mapRef}
-            provider={PROVIDER_GOOGLE}
-            style={styles.map}
-            initialRegion={{
-              latitude: selectedLocation.latitude,
-              longitude: selectedLocation.longitude,
-              latitudeDelta: 0.0922,
-              longitudeDelta: 0.0421,
-            }}
-            onPress={handleMapPress}
-            onMapReady={handleMapReady}
-          >
-            <Marker
-              coordinate={selectedLocation}
-              draggable
-              onDragEnd={handleMarkerDragEnd}
-              pinColor={colors.primary[600]}
-            >
-              <Animated.View
-                style={[
-                  styles.customMarker,
-                  { transform: [{ scale: markerScale }] },
-                ]}
-              >
-                <Ionicons name="location" size={48} color={colors.primary[600]} />
-              </Animated.View>
-            </Marker>
-          </MapView>
-
-          {/* Map Instructions */}
-          <View style={styles.mapInstructions}>
-            <View style={styles.instructionRow}>
-              <Ionicons name="hand-left" size={20} color={colors.primary[600]} />
-              <Text style={styles.instructionText}>Tap or drag the marker to set location</Text>
-            </View>
-            <View style={styles.coordinatesDisplay}>
-              <Text style={styles.coordinatesText}>
-                Lat: {selectedLocation.latitude.toFixed(6)}
-              </Text>
-              <Text style={styles.coordinatesText}>
-                Lng: {selectedLocation.longitude.toFixed(6)}
-              </Text>
-            </View>
-          </View>
-
-          {/* Confirm Button */}
-          <View style={styles.mapFooter}>
-            <TouchableOpacity
-              style={styles.confirmLocationButton}
-              onPress={confirmLocation}
-            >
-              <Ionicons name="checkmark-circle" size={24} color="#fff" />
-              <Text style={styles.confirmLocationText}>Confirm Location</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
+        onClose={() => setShowMapModal(false)}
+        initialLocation={selectedLocation}
+        onLocationSelect={(location) => setSelectedLocation(location)}
+      />
     </SafeAreaView>
   );
 }
@@ -556,25 +458,28 @@ export default function AddTurfScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.gray[50],
+    backgroundColor: colors.backgroundSecondary,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: colors.gray[200],
+    ...shadows.sm,
   },
   headerTitle: {
     fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.bold,
     color: colors.textPrimary,
+    flex: 1,
+    textAlign: 'center',
   },
   content: {
     flex: 1,
-    padding: spacing.lg,
   },
   infoBanner: {
     flexDirection: 'row',
@@ -582,7 +487,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[50],
     padding: spacing.lg,
     borderRadius: borderRadius.lg,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
     marginBottom: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.primary[100],
   },
   infoText: {
     flex: 1,
@@ -593,6 +502,7 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: spacing.xl,
+    paddingHorizontal: spacing.lg,
   },
   sectionTitle: {
     fontSize: typography.fontSize.lg,
@@ -615,16 +525,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.md,
+    position: 'relative',
+    ...shadows.sm,
   },
   sportCardActive: {
     borderColor: colors.primary[600],
     backgroundColor: colors.primary[50],
+    ...shadows.md,
   },
   sportLabel: {
     fontSize: typography.fontSize.sm,
     color: colors.textSecondary,
     marginTop: spacing.sm,
     textAlign: 'center',
+    fontWeight: typography.fontWeight.medium,
   },
   sportLabelActive: {
     color: colors.primary[600],
@@ -637,36 +551,41 @@ const styles = StyleSheet.create({
   },
   imageWrapper: {
     position: 'relative',
-    width: 100,
-    height: 100,
+    width: 120,
+    height: 120,
+    borderRadius: borderRadius.lg,
+    ...shadows.sm,
   },
   image: {
     width: '100%',
     height: '100%',
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.gray[200],
   },
   removeImageBtn: {
     position: 'absolute',
     top: -8,
     right: -8,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 12,
+    backgroundColor: colors.error[500],
+    borderRadius: borderRadius.full,
+    ...shadows.md,
   },
   addImageBtn: {
-    width: 100,
-    height: 100,
-    backgroundColor: colors.gray[100],
-    borderRadius: borderRadius.md,
+    width: 120,
+    height: 120,
+    backgroundColor: colors.primary[50],
+    borderRadius: borderRadius.lg,
     borderWidth: 2,
-    borderColor: colors.gray[300],
+    borderColor: colors.primary[600],
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
   },
   addImageText: {
     fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
+    color: colors.primary[600],
     marginTop: spacing.xs,
+    fontWeight: typography.fontWeight.semibold,
   },
   row: {
     flexDirection: 'row',
@@ -678,32 +597,41 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   amenityChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     backgroundColor: '#fff',
     borderRadius: borderRadius.full,
     borderWidth: 1,
     borderColor: colors.gray[300],
+    ...shadows.sm,
   },
   amenityChipActive: {
-    backgroundColor: colors.primary[600],
+    backgroundColor: colors.primary[50],
     borderColor: colors.primary[600],
+    ...shadows.md,
   },
   amenityText: {
     fontSize: typography.fontSize.sm,
     color: colors.textSecondary,
+    fontWeight: typography.fontWeight.medium,
   },
   amenityTextActive: {
-    color: '#fff',
+    color: colors.primary[600],
+    fontWeight: typography.fontWeight.semibold,
   },
   errorText: {
     fontSize: typography.fontSize.sm,
     color: colors.error[500],
     marginBottom: spacing.sm,
+    fontWeight: typography.fontWeight.medium,
   },
-  submitBtn: {
-    marginTop: spacing.lg,
-    marginBottom: spacing['2xl'],
+  submitContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing['2xl'],
   },
   // Map Selector Styles
   mapSelectorContainer: {
@@ -724,6 +652,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     borderWidth: 1,
     borderColor: colors.gray[300],
+    ...shadows.sm,
   },
   mapSelectorContent: {
     flexDirection: 'row',
@@ -744,84 +673,19 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.xs,
   },
-  // Map Modal Styles
-  mapModal: {
-    flex: 1,
-    backgroundColor: '#fff',
+  // Sport Selection Badge
+  selectedBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: colors.primary[600],
+    borderRadius: borderRadius.full,
+    padding: 2,
   },
-  mapHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.gray[200],
-  },
-  mapCloseButton: {
-    padding: spacing.sm,
-  },
-  mapHeaderTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.textPrimary,
-  },
-  mapCenterButton: {
-    padding: spacing.sm,
-  },
-  map: {
-    flex: 1,
-  },
-  customMarker: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mapInstructions: {
-    backgroundColor: '#fff',
-    padding: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.gray[200],
-  },
-  instructionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  instructionText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    marginLeft: spacing.sm,
-  },
-  coordinatesDisplay: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.gray[200],
-  },
-  coordinatesText: {
+  helpText: {
     fontSize: typography.fontSize.xs,
     color: colors.textSecondary,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  mapFooter: {
-    padding: spacing.lg,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: colors.gray[200],
-  },
-  confirmLocationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary[600],
-    padding: spacing.lg,
-    borderRadius: borderRadius.full,
-    gap: spacing.sm,
-  },
-  confirmLocationText: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold,
-    color: '#fff',
+    marginTop: spacing.sm,
+    fontStyle: 'italic',
   },
 });

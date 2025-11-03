@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Image,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -220,12 +221,17 @@ export default function OwnerBookingsScreen({ navigation }: any) {
         </Text>
       </View>
 
-      <View style={styles.filtersContainer}>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        style={styles.filtersContainer}
+        contentContainerStyle={styles.filtersContent}
+      >
         {renderFilterButton('all', 'All', stats.all)}
         {renderFilterButton('pending', 'Pending', stats.pending)}
         {renderFilterButton('confirmed', 'Confirmed', stats.confirmed)}
         {renderFilterButton('completed', 'Completed', stats.completed)}
-      </View>
+      </ScrollView>
 
       <FlatList
         data={filteredBookings}
@@ -263,18 +269,28 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   filtersContainer: {
-    flexDirection: 'row',
-    padding: spacing.md,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: colors.gray[200],
-    gap: spacing.sm,
+    height: 55,
+    flexGrow: 0,
+  },
+  filtersContent: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    flexGrow: 0,
   },
   filterButton: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
     borderRadius: borderRadius.full,
     backgroundColor: colors.gray[100],
+    marginRight: spacing.sm,
+    minWidth: 80,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterButtonActive: {
     backgroundColor: colors.primary[600],
@@ -283,6 +299,7 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xs,
     color: colors.textSecondary,
     fontWeight: typography.fontWeight.semibold,
+    textAlign: 'center',
   },
   filterTextActive: {
     color: '#fff',
