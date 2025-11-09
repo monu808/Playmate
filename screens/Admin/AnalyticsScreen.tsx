@@ -16,6 +16,7 @@ import { formatCurrency } from '../../lib/utils';
 export default function AnalyticsScreen({ navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
+    platformRevenue: 0,
     totalRevenue: 0,
     totalBookings: 0,
     confirmedBookings: 0,
@@ -38,11 +39,18 @@ export default function AnalyticsScreen({ navigation }: any) {
         getAllBookings(),
       ]);
 
+      // Calculate total revenue (what users paid)
       const totalRevenue = bookings
         .filter((b) => b.status === 'confirmed' || b.status === 'completed')
         .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
+      // Calculate platform revenue (platform fees only)
+      const platformRevenue = bookings
+        .filter((b) => b.status === 'confirmed' || b.status === 'completed')
+        .reduce((sum, b) => sum + (b.paymentBreakdown?.platformShare || 0), 0);
+
       setStats({
+        platformRevenue,
         totalRevenue,
         totalBookings: bookings.length,
         confirmedBookings: bookings.filter((b) => b.status === 'confirmed').length,
@@ -86,12 +94,25 @@ export default function AnalyticsScreen({ navigation }: any) {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Revenue Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Revenue</Text>
+          <Text style={styles.sectionTitle}>Revenue Overview</Text>
+          
+          {/* Platform Revenue Card */}
           <View style={styles.revenueCard}>
             <Ionicons name="cash" size={48} color={colors.primary[600]} />
             <View style={styles.revenueContent}>
-              <Text style={styles.revenueLabel}>Total Revenue</Text>
+              <Text style={styles.revenueLabel}>Platform Revenue (Fees)</Text>
               <Text style={styles.revenueValue}>
+                {formatCurrency(stats.platformRevenue)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Total Revenue Card */}
+          <View style={[styles.revenueCard, { marginTop: spacing.md }]}>
+            <Ionicons name="trending-up" size={48} color="#10b981" />
+            <View style={styles.revenueContent}>
+              <Text style={styles.revenueLabel}>Total Bookings Value</Text>
+              <Text style={[styles.revenueValue, { color: '#10b981' }]}>
                 {formatCurrency(stats.totalRevenue)}
               </Text>
             </View>
@@ -188,7 +209,21 @@ export default function AnalyticsScreen({ navigation }: any) {
           <View style={styles.insightCard}>
             <Ionicons name="stats-chart" size={24} color="#3b82f6" />
             <View style={styles.insightContent}>
-              <Text style={styles.insightTitle}>Average Revenue per Booking</Text>
+              <Text style={styles.insightTitle}>Average Platform Fee per Booking</Text>
+              <Text style={styles.insightValue}>
+                {formatCurrency(
+                  stats.totalBookings > 0
+                    ? Math.round(stats.platformRevenue / stats.totalBookings)
+                    : 0
+                )}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.insightCard}>
+            <Ionicons name="wallet" size={24} color="#f59e0b" />
+            <View style={styles.insightContent}>
+              <Text style={styles.insightTitle}>Average Booking Value</Text>
               <Text style={styles.insightValue}>
                 {formatCurrency(
                   stats.totalBookings > 0

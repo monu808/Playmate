@@ -6,7 +6,6 @@ import { getStorage, FirebaseStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import with type assertion since getReactNativePersistence exists at runtime
-// but may not be in type definitions
 const { getReactNativePersistence } = require('firebase/auth') as any;
 
 const firebaseConfig = {
@@ -39,5 +38,7 @@ try {
 
 const db: Firestore = getFirestore(app);
 const storage: FirebaseStorage = getStorage(app);
+
+console.log('🔥 Firebase initialized');
 
 export { app, auth, db, storage };

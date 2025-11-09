@@ -39,12 +39,13 @@ export default function AdminDashboardScreen({ navigation }: any) {
       const bookingsSnapshot = await getDocs(collection(db, 'bookings'));
       const totalBookings = bookingsSnapshot.size;
       
-      // Calculate revenue from bookings
+      // Calculate platform revenue from bookings (platform fees only)
       let revenue = 0;
       bookingsSnapshot.docs.forEach(doc => {
         const booking = doc.data();
-        if (booking.status === 'completed' && booking.totalPrice) {
-          revenue += booking.totalPrice;
+        // Only count completed and confirmed bookings
+        if ((booking.status === 'completed' || booking.status === 'confirmed') && booking.paymentBreakdown?.platformShare) {
+          revenue += booking.paymentBreakdown.platformShare;
         }
       });
       
@@ -243,7 +244,7 @@ export default function AdminDashboardScreen({ navigation }: any) {
             <Text style={styles.statValue}>
               ₹{stats.revenue.toLocaleString('en-IN')}
             </Text>
-            <Text style={styles.statLabel}>Revenue</Text>
+            <Text style={styles.statLabel}>Platform Revenue</Text>
           </View>
         </View>
 

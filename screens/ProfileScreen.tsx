@@ -126,38 +126,80 @@ const ProfileScreen: React.FC = () => {
   const handleSelectImage = async () => {
     if (!user) return;
 
-    // Request permissions
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        'Permission Required',
-        'Please grant camera roll permissions to upload a profile picture.'
-      );
-      return;
-    }
+    // Show options: Take Photo or Choose from Library
+    Alert.alert(
+      'Update Profile Picture',
+      'Choose how you want to update your profile picture',
+      [
+        {
+          text: 'Take Photo',
+          onPress: async () => {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') {
+              Alert.alert(
+                'Permission Required',
+                'Please grant camera permissions to take a photo.'
+              );
+              return;
+            }
 
-    // Launch image picker
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
+            const result = await ImagePicker.launchCameraAsync({
+              allowsEditing: false,
+              quality: 0.8,
+            });
 
-    if (!result.canceled && result.assets[0]) {
-      setUploadingImage(true);
-      try {
-        const uploadResult = await uploadProfileImage(user.uid, result.assets[0].uri);
-        if (uploadResult.success) {
-          Alert.alert('Success', 'Profile picture updated successfully!');
-        } else {
-          Alert.alert('Error', uploadResult.error || 'Failed to upload image');
-        }
-      } catch (error: any) {
-        Alert.alert('Error', error.message);
-      } finally {
-        setUploadingImage(false);
+            if (!result.canceled && result.assets[0]) {
+              uploadImage(result.assets[0].uri);
+            }
+          },
+        },
+        {
+          text: 'Choose from Gallery',
+          onPress: async () => {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+              Alert.alert(
+                'Permission Required',
+                'Please grant gallery permissions to select a photo.'
+              );
+              return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ['images'],
+              allowsEditing: false,
+              quality: 0.8,
+            });
+
+            if (!result.canceled && result.assets[0]) {
+              uploadImage(result.assets[0].uri);
+            }
+          },
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const uploadImage = async (uri: string) => {
+    if (!user) return;
+    
+    setUploadingImage(true);
+    try {
+      const uploadResult = await uploadProfileImage(user.uid, uri);
+      if (uploadResult.success) {
+        Alert.alert('Success', 'Profile picture updated successfully!');
+      } else {
+        Alert.alert('Error', uploadResult.error || 'Failed to upload image');
       }
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setUploadingImage(false);
     }
   };
 

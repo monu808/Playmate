@@ -1,14 +1,12 @@
 /**
  * BookingModal Component
  * 
- * IMPORTANT: This component uses a MOCK Razorpay implementation for Expo Go testing.
- * For production, you need to:
- * 1. Create a development build: npx expo install expo-dev-client
- * 2. Replace the mock RazorpayCheckout with: import RazorpayCheckout from 'react-native-razorpay'
- * 3. Build with: npx expo run:android or npx expo run:ios
+ * Real Razorpay Payment Integration via WebView
+ * Works in Expo Go - No native build required!
+ * OPTIMIZED FOR PERFORMANCE
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -32,23 +30,8 @@ import { TIME_SLOTS, RAZORPAY_KEY_ID } from '../lib/constants';
 import { createBooking, getTurfBookings } from '../lib/firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { theme } from '../lib/theme';
-
-// Mock Razorpay for Expo Go (replace with actual import in production build)
-const RazorpayCheckout = {
-  open: (options: any) => {
-    return new Promise((resolve, reject) => {
-      // Simulate payment success for testing in Expo Go
-      setTimeout(() => {
-        resolve({
-          razorpay_payment_id: 'pay_mock_' + Date.now(),
-          razorpay_order_id: 'order_mock_' + Date.now(),
-          razorpay_signature: 'sig_mock_' + Date.now(),
-        });
-      }, 1000);
-    });
-  },
-  PAYMENT_CANCELLED: 'payment_cancelled',
-};
+// WebView-based Razorpay (works in Expo Go!)
+import { RazorpayWebView } from './RazorpayWebView';
 
 interface BookingModalProps {
   visible: boolean;
@@ -70,96 +53,87 @@ const BookingModal: React.FC<BookingModalProps> = ({
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   const price = turf?.pricePerHour || turf?.price || 0;
 
-  useEffect(() => {
-    console.log('🎯 useEffect triggered - visible:', visible, 'turf?.id:', turf?.id);
-    if (visible && turf?.id) {
-      console.log('🔄 Modal opened, loading slots...');
-      console.log('  Selected date:', format(selectedDate, 'yyyy-MM-dd'));
-      loadBookedSlots();
-      // Reset selections when modal opens
-      setStartTime(null);
-      setEndTime(null);
-      setAgreedToTerms(false);
-    } else {
-      console.log('⏭️ Skipping slot load - visible:', visible, 'turf?.id:', turf?.id);
-    }
-  }, [visible, selectedDate, turf?.id]);
-
-  const loadBookedSlots = async () => {
+  // PERFORMANCE: Memoize loadBookedSlots function
+  const loadBookedSlots = useCallback(async () => {
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      console.log('📅 Loading booked slots for:', dateStr, 'Turf:', turf.id);
-      console.log('🔍 Fetching bookings from Firestore...');
       
       const bookings = await getTurfBookings(turf.id, dateStr);
-      console.log('📊 Raw bookings data:', JSON.stringify(bookings, null, 2));
-      console.log('📊 Found bookings:', bookings.length);
       
       if (bookings.length === 0) {
-        console.log('⚠️ No bookings found for this turf on this date');
         setBookedSlots([]);
         return;
       }
       
-      const slots = bookings.map(
-        (b) => {
-          const slotStr = `${b.startTime}-${b.endTime}`;
-          console.log('🔒 Booked slot:', slotStr, 'Status:', b.status);
-          return slotStr;
+      const slots = bookings.map((b) => `${b.startTime}-${b.endTime}`);
+      
+      // Update slots only if different to prevent unnecessary re-renders
+      setBookedSlots(prevSlots => {
+        const prevSlotsStr = JSON.stringify(prevSlots.sort());
+        const newSlotsStr = JSON.stringify(slots.sort());
+        
+        if (prevSlotsStr !== newSlotsStr) {
+          return slots;
         }
-      );
-      setBookedSlots(slots);
-      console.log('✅ Total booked slots set in state:', slots);
-      console.log('✅ bookedSlots state will be:', slots);
+        
+        return prevSlots;
+      });
     } catch (error) {
-      console.error('❌ Error loading booked slots:', error);
-      console.error('❌ Error details:', JSON.stringify(error, null, 2));
+      console.error('Error loading booked slots:', error);
     }
-  };
+  }, [turf?.id, selectedDate]);
+
+  useEffect(() => {
+    if (visible && turf?.id) {
+      // Load slots immediately
+      loadBookedSlots();
+      
+      // Reset selections when modal opens or date changes
+      setStartTime(null);
+      setEndTime(null);
+      setAgreedToTerms(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, selectedDate, turf?.id]); // Don't include loadBookedSlots to avoid loops
 
   const isTimeSlotBooked = (time: string) => {
-    console.log(`🔎 Checking if time ${time} is booked...`);
-    console.log(`🔎 Current bookedSlots state:`, bookedSlots);
-    
     // Check if this time overlaps with any booked slots
-    // A time slot is booked if it falls within a booked range (excluding the end time)
-    // Example: If 20:00-21:00 is booked, 20:00 is locked but 21:00 is available for next booking
     const isBooked = bookedSlots.some((slot) => {
       const [bookedStart, bookedEnd] = slot.split('-');
-      console.log(`  Comparing ${time} with slot ${bookedStart}-${bookedEnd}`);
-      // Only lock times that are actually being used in the booked slot
-      // time >= bookedStart && time < bookedEnd ensures end time is available for next slot
-      const result = time >= bookedStart && time < bookedEnd;
-      if (result) {
-        console.log(`  ✅ MATCH: Time ${time} is booked (slot: ${slot})`);
-      }
-      return result;
+      return time >= bookedStart && time < bookedEnd;
     });
     
-    console.log(`🔎 Final result for ${time}: ${isBooked ? '🔒 BOOKED' : '✅ AVAILABLE'}`);
     return isBooked;
   };
 
-  const handleDateSelect = (daysToAdd: number) => {
+  // PERFORMANCE: Memoize date selection handler
+  const handleDateSelect = useCallback((daysToAdd: number) => {
     const newDate = new Date();
     newDate.setDate(newDate.getDate() + daysToAdd);
-    setSelectedDate(newDate);
-    setStartTime(null);
-    setEndTime(null);
-  };
+    const newDateStr = format(newDate, 'yyyy-MM-dd');
+    const currentDateStr = format(selectedDate, 'yyyy-MM-dd');
+    
+    // Only update if date actually changed
+    if (newDateStr !== currentDateStr) {
+      setSelectedDate(newDate);
+      setStartTime(null);
+      setEndTime(null);
+    }
+  }, [selectedDate]);
 
-  const handleStartTimeSelect = (time: string) => {
+  const handleStartTimeSelect = useCallback((time: string) => {
     setStartTime(time);
     // Reset end time if it's before new start time
     if (endTime && endTime <= time) {
       setEndTime(null);
     }
-  };
+  }, [endTime]);
 
-  const handleEndTimeSelect = (time: string) => {
+  const handleEndTimeSelect = useCallback((time: string) => {
     if (!startTime) {
       Alert.alert('Select Start Time', 'Please select a start time first');
       return;
@@ -169,7 +143,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
       return;
     }
     setEndTime(time);
-  };
+  }, [startTime]);
 
   const isValidTimeRange = () => {
     if (!startTime || !endTime) return true;
@@ -208,100 +182,101 @@ const BookingModal: React.FC<BookingModalProps> = ({
       return;
     }
 
+    // Open WebView payment modal
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSuccess = async (paymentData: any) => {
     try {
+      setShowPaymentModal(false);
       setLoading(true);
 
       // Calculate payment breakdown
-      const baseTurfAmount = calculateBaseTurfAmount(
-        price,
-        startTime,
-        endTime
-      );
+      const baseTurfAmount = calculateBaseTurfAmount(price, startTime!, endTime!);
       const breakdown = calculatePaymentBreakdown(baseTurfAmount);
 
-      // Razorpay options
-      const options = {
-        description: `Booking for ${turf.name}`,
-        image: turf.images?.[0] || '',
-        currency: 'INR',
-        key: RAZORPAY_KEY_ID,
-        amount: breakdown.totalAmount * 100, // Razorpay expects amount in paise
-        name: 'Playmate',
-        prefill: {
-          email: user.email || '',
-          contact: user.phoneNumber || '',
-          name: user.displayName || 'User',
-        },
-        theme: { color: '#16a34a' },
+      // Store selected time for optimistic update
+      const bookedSlot = `${startTime}-${endTime}`;
+
+      // Create booking
+      const bookingData = {
+        userId: user!.uid,
+        userName: user!.displayName || 'User',
+        userEmail: user!.email || '',
+        userPhone: user!.phoneNumber || '',
+        turfId: turf.id,
+        turfName: turf.name,
+        turfImage: turf.images?.[0] || '',
+        turfLocation: turf.location,
+        date: format(selectedDate, 'yyyy-MM-dd'),
+        startTime: startTime!,
+        endTime: endTime!,
+        totalAmount: breakdown.totalAmount,
+        paymentId: paymentData.razorpay_payment_id,
+        status: 'confirmed' as const,
+        paymentBreakdown: breakdown,
+        createdAt: new Date(),
       };
 
-      // Open Razorpay
-      RazorpayCheckout.open(options)
-        .then(async (data: any) => {
-          // Payment successful
-          console.log('Payment success:', data);
-          
-          // Create booking (payment simulated in Expo Go)
-          const bookingData = {
-            userId: user.uid,
-            userName: user.displayName || 'User',
-            userEmail: user.email || '',
-            userPhone: user.phoneNumber || '',
-            turfId: turf.id,
-            turfName: turf.name,
-            turfImage: turf.images?.[0] || '',
-            turfLocation: turf.location,
-            date: format(selectedDate, 'yyyy-MM-dd'),
-            startTime: startTime,
-            endTime: endTime,
-            totalAmount: breakdown.totalAmount,
-            paymentId: data.razorpay_payment_id,
-            status: 'confirmed' as const,
-            paymentBreakdown: breakdown,
-            createdAt: new Date(),
-          };
+      const result = await createBooking(bookingData);
 
-          const result = await createBooking(bookingData);
-
-          if (result.success) {
-            // Reload booked slots to show the newly booked slot as locked
-            await loadBookedSlots();
-            
-            // Success handled by parent screen's onBookingSuccess callback
-            onBookingSuccess();
-            // Reset selections after successful booking
-            setStartTime(null);
-            setEndTime(null);
-            setAgreedToTerms(false);
-          } else {
-            Alert.alert('Error', result.error || 'Failed to create booking');
+      if (result.success) {
+        // Optimistic UI update - immediately lock the slot
+        setBookedSlots(prev => [...prev, bookedSlot]);
+        
+        // Reset form
+        setStartTime(null);
+        setEndTime(null);
+        setAgreedToTerms(false);
+        setLoading(false);
+        
+        // Show success immediately
+        Alert.alert('Success! 🎉', 'Booking confirmed successfully!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              onBookingSuccess();
+            }
           }
-        })
-        .catch((error: any) => {
-          // Payment failed or cancelled
-          console.log('Payment error:', error);
-          if (error.code !== RazorpayCheckout.PAYMENT_CANCELLED) {
-            Alert.alert('Payment Failed', error.description || 'Payment failed');
-          }
-        })
-        .finally(() => {
-          setLoading(false);
-        });
+        ]);
+        
+        // Reload slots in background to sync with server
+        loadBookedSlots();
+      } else {
+        setLoading(false);
+        Alert.alert('Error', result.error || 'Failed to create booking');
+      }
     } catch (error) {
-      console.error('Payment error:', error);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      console.error('Booking error:', error);
       setLoading(false);
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     }
   };
 
-  // Generate payment breakdown for display
-  const baseTurfAmount = startTime && endTime
-    ? calculateBaseTurfAmount(price, startTime, endTime)
-    : 0;
-  const breakdown = calculatePaymentBreakdown(baseTurfAmount);
-  const duration = startTime && endTime
-    ? calculateDuration(startTime, endTime)
-    : 0;
+  const handlePaymentError = (error: any) => {
+    setShowPaymentModal(false);
+    Alert.alert('Payment Failed', error.description || 'Payment failed. Please try again.');
+  };
+
+  const handlePaymentDismiss = () => {
+    setShowPaymentModal(false);
+  };
+
+  // PERFORMANCE: Memoize payment breakdown calculations
+  const baseTurfAmount = useMemo(() => 
+    startTime && endTime ? calculateBaseTurfAmount(price, startTime, endTime) : 0,
+    [price, startTime, endTime]
+  );
+  
+  const breakdown = useMemo(() => 
+    calculatePaymentBreakdown(baseTurfAmount),
+    [baseTurfAmount]
+  );
+  
+  const duration = useMemo(() => 
+    startTime && endTime ? calculateDuration(startTime, endTime) : 0,
+    [startTime, endTime]
+  );
 
   return (
     <Modal visible={visible} onClose={onClose} showCloseButton={false}>
@@ -340,6 +315,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
                       isSelected && styles.dateCardSelected,
                     ]}
                     onPress={() => handleDateSelect(daysAhead)}
+                    activeOpacity={0.7}
                   >
                     <Text
                       style={[
@@ -593,6 +569,27 @@ const BookingModal: React.FC<BookingModalProps> = ({
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Razorpay Payment WebView */}
+      {user && startTime && endTime && (
+        <RazorpayWebView
+          visible={showPaymentModal}
+          amount={breakdown.totalAmount}
+          currency="INR"
+          keyId={RAZORPAY_KEY_ID}
+          name="Playmate"
+          description={`Booking for ${turf.name}`}
+          prefill={{
+            name: user.displayName || 'User',
+            email: user.email || '',
+            contact: user.phoneNumber || '',
+          }}
+          theme={{ color: '#16a34a' }}
+          onSuccess={handlePaymentSuccess}
+          onError={handlePaymentError}
+          onDismiss={handlePaymentDismiss}
+        />
+      )}
     </Modal>
   );
 };

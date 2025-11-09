@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -32,11 +32,8 @@ const TurfDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [bookingModalVisible, setBookingModalVisible] = useState(false);
 
-  useEffect(() => {
-    loadTurf();
-  }, [id]);
-
-  const loadTurf = async () => {
+  // PERFORMANCE: Memoize loadTurf function
+  const loadTurf = useCallback(async () => {
     try {
       setLoading(true);
       const turfData = await getTurfById(id);
@@ -52,13 +49,14 @@ const TurfDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigation]);
 
-  const handleBookNow = () => {
+  // PERFORMANCE: Memoize handlers
+  const handleBookNow = useCallback(() => {
     setBookingModalVisible(true);
-  };
+  }, []);
 
-  const handleBookingSuccess = () => {
+  const handleBookingSuccess = useCallback(() => {
     setBookingModalVisible(false);
     Alert.alert(
       'Success!',
@@ -70,7 +68,12 @@ const TurfDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         },
       ]
     );
-  };
+  }, [navigation]);
+
+  // Load turf data on mount
+  useEffect(() => {
+    loadTurf();
+  }, [loadTurf]);
 
   if (loading) {
     return (

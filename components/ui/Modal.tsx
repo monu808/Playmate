@@ -8,9 +8,12 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { colors, typography, borderRadius, spacing, shadows } from '../../lib/theme';
 import { Ionicons } from '@expo/vector-icons';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface ModalProps {
   visible: boolean;
@@ -35,42 +38,44 @@ export const Modal: React.FC<ModalProps> = ({
       transparent={!fullScreen}
       animationType="slide"
       onRequestClose={onClose}
+      statusBarTranslucent={false}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
-      >
+      <View style={styles.modalWrapper}>
         <TouchableOpacity
           style={styles.backdrop}
           activeOpacity={1}
           onPress={onClose}
         />
         
-        <View style={[styles.modal, fullScreen && styles.fullScreenModal]}>
-          {(title || showCloseButton) && (
-            <View style={styles.header}>
-              {title && <Text style={styles.title}>{title}</Text>}
-              {showCloseButton && (
-                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                  <Ionicons name="close" size={24} color={colors.textPrimary} />
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-          
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            {children}
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.keyboardView}
+        >
+          <View style={[styles.modal, fullScreen && styles.fullScreenModal]}>
+            {(title || showCloseButton) && (
+              <View style={styles.header}>
+                {title && <Text style={styles.title}>{title}</Text>}
+                {showCloseButton && (
+                  <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                    <Ionicons name="close" size={24} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+            
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+              {children}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
     </RNModal>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  modalWrapper: {
     flex: 1,
-    justifyContent: 'flex-end',
   },
   backdrop: {
     position: 'absolute',
@@ -80,11 +85,16 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
+  keyboardView: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
   modal: {
     backgroundColor: colors.background,
     borderTopLeftRadius: borderRadius['2xl'],
     borderTopRightRadius: borderRadius['2xl'],
-    maxHeight: '90%',
+    maxHeight: '95%',
+    paddingBottom: Platform.OS === 'android' ? spacing.md : 0,
     ...shadows.xl,
   },
   fullScreenModal: {

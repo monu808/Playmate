@@ -11,19 +11,22 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#16a34a"
     },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Playmate needs your location to show nearby turfs and calculate distances.",
         "NSLocationAlwaysUsageDescription": "Playmate needs your location to show nearby turfs and calculate distances."
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyCHOWM71qRhxoE2zkEgPTX4xu4bF1m9gVQ"
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#16a34a"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -33,18 +36,16 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.CAMERA",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.CAMERA"
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+          "apiKey": "AIzaSyDyCFyB-6FIu2qN_3QCGY3sDKX00uxKfTQ"
         }
       },
-      "package": "com.monu80850.PlaymateApp"
+      "package": "com.monu80850.PlaymateApp",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -60,7 +61,12 @@
           "locationWhenInUsePermission": "Playmate needs your location to show nearby turfs and calculate distances."
         }
       ],
-      "expo-barcode-scanner"
-    ]
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6e79d7b3-ab8f-4950-b3fa-2ce036b63bc5"
+      }
+    }
   }
 }

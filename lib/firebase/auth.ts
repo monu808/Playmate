@@ -44,11 +44,16 @@ export const signInWithGoogle = async () => {
  */
 export const processGoogleSignIn = async (idToken: string) => {
   try {
+    console.log('🔐 Processing Google sign-in with ID token...');
+    
     // Create Firebase credential from Google ID token
     const credential = GoogleAuthProvider.credential(idToken);
+    console.log('✅ Firebase credential created');
     
     // Sign in to Firebase
+    console.log('🔄 Signing in to Firebase...');
     const userCredential = await signInWithCredential(auth, credential);
+    console.log('✅ Successfully signed in to Firebase');
     const firebaseUser = userCredential.user;
     
     // Check if user document exists
@@ -76,10 +81,25 @@ export const processGoogleSignIn = async (idToken: string) => {
     
     return { success: true, user: firebaseUser };
   } catch (error: any) {
-    console.error('Process Google sign in error:', error);
+    console.error('❌ Process Google sign in error:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    
+    let userMessage = 'Failed to complete Google sign in';
+    
+    if (error.code === 'auth/network-request-failed') {
+      userMessage = 'Network error: Please check your internet connection and try again.';
+    } else if (error.code === 'auth/invalid-credential') {
+      userMessage = 'Invalid authentication credential. Please try signing in again.';
+    } else if (error.code === 'auth/user-disabled') {
+      userMessage = 'This account has been disabled.';
+    } else if (error.message) {
+      userMessage = error.message;
+    }
+    
     return {
       success: false,
-      error: error.message || 'Failed to complete Google sign in',
+      error: userMessage,
     };
   }
 };
@@ -89,13 +109,37 @@ export const processGoogleSignIn = async (idToken: string) => {
  */
 export const signIn = async (email: string, password: string) => {
   try {
+    console.log('🔐 Attempting to sign in with email:', email);
+    console.log('🌐 Checking Firebase auth state...');
+    console.log('Auth object:', auth ? '✅ Auth initialized' : '❌ Auth not initialized');
+    
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    console.log('✅ Sign in successful!');
     return { success: true, user: userCredential.user };
   } catch (error: any) {
-    console.error('Sign in error:', error);
+    console.error('❌ Sign in error:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    
+    let userMessage = 'Failed to sign in';
+    
+    if (error.code === 'auth/network-request-failed') {
+      userMessage = 'Network error: Please check your internet connection. Make sure your device has internet access.';
+    } else if (error.code === 'auth/user-not-found') {
+      userMessage = 'No account found with this email.';
+    } else if (error.code === 'auth/wrong-password') {
+      userMessage = 'Incorrect password.';
+    } else if (error.code === 'auth/invalid-email') {
+      userMessage = 'Invalid email address.';
+    } else if (error.code === 'auth/user-disabled') {
+      userMessage = 'This account has been disabled.';
+    } else if (error.message) {
+      userMessage = error.message;
+    }
+    
     return {
       success: false,
-      error: error.message || 'Failed to sign in',
+      error: userMessage,
     };
   }
 };

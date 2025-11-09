@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -7,6 +7,7 @@ import { View, StyleSheet } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { LoadingSpinner } from '../components/ui';
 import { isAdmin } from '../lib/firebase/admin';
+import { SplashScreen } from '../components/SplashScreen';
 
 // User Screens
 import HomeScreen from '../screens/HomeScreen';
@@ -40,7 +41,9 @@ export type RootStackParamList = {
   Main: undefined;
   Admin: undefined;
   Owner: undefined;
-  TurfDetail: { turfId: string };
+  TurfDetail: { id: string };
+  AddTurf: undefined;
+  OwnerScanQR: undefined;
 };
 
 export type AuthStackParamList = {
@@ -62,6 +65,7 @@ export type AdminStackParamList = {
   ManageUsers: undefined;
   Analytics: undefined;
   ScanQR: undefined;
+  PendingTurfs: undefined;
 };
 
 export type OwnerTabParamList = {
@@ -194,8 +198,9 @@ export default function Navigation() {
   const { isAuthenticated, loading, user, userData } = useAuth();
   const [userIsAdmin, setUserIsAdmin] = useState(false);
   const [checkingRole, setCheckingRole] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
 
-  // Check user role
+  // Check user role - MEMOIZED
   useEffect(() => {
     async function checkUserRole() {
       if (user?.uid && userData) {
@@ -216,6 +221,30 @@ export default function Navigation() {
     }
   }, [isAuthenticated, user, userData]);
 
+  // Handle splash screen dismissal
+  useEffect(() => {
+    if (showSplash) {
+      // Auto-dismiss splash after initialization
+      const timer = setTimeout(() => {
+        setShowSplash(false);
+      }, 2600); // Match the duration in SplashScreen component
+      return () => clearTimeout(timer);
+    }
+  }, [showSplash]);
+
+  // PERFORMANCE: Memoize user role calculation (must be before any returns)
+  const role = useMemo(() => {
+    if (!isAuthenticated || !userData) return 'guest';
+    if (userIsAdmin || userData.role === 'admin') return 'admin';
+    if (userData.role === 'owner') return 'owner';
+    return 'user';
+  }, [isAuthenticated, userData, userIsAdmin]);
+
+  // Show splash screen
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+
   // Show loading screen while checking auth state
   if (loading || checkingRole) {
     return (
@@ -224,16 +253,6 @@ export default function Navigation() {
       </View>
     );
   }
-
-  // Determine user role
-  const getUserRole = () => {
-    if (!isAuthenticated || !userData) return 'guest';
-    if (userIsAdmin || userData.role === 'admin') return 'admin';
-    if (userData.role === 'owner') return 'owner';
-    return 'user';
-  };
-
-  const role = getUserRole();
 
   return (
     <NavigationContainer>

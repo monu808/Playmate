@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "717547014679",
+    "project_id": "turf-booking-63618",
+    "storage_bucket": "turf-booking-63618.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:717547014679:android:177978f37c9c441ea0ea52",
+        "android_client_info": {
+          "package_name": "com.monu80850.PlaymateApp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "717547014679-dahif31gbj1c16o06l27piqu623js21q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.monu80850.PlaymateApp",
+            "certificate_hash": "e2c4db3b56914c7e5e1fb2e0e29d655208332720"
+          }
+        },
+        {
+          "client_id": "717547014679-5mjcl3dl32vg635go49gf3eeoje9595g.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDyCFyB-6FIu2qN_3QCGY3sDKX00uxKfTQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "717547014679-5mjcl3dl32vg635go49gf3eeoje9595g.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

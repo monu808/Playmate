@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import { makeRedirectUri } from 'expo-auth-session';
 import { signIn, processGoogleSignIn } from '../../lib/firebase/auth';
 import { Button, Input } from '../../components/ui';
 import { colors, typography, spacing, borderRadius } from '../../lib/theme';
@@ -26,16 +27,22 @@ export default function LoginScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
-  // Configure Google Auth
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: '717547014679-5mjcl3dl32vg635go49gf3eeoje9595g.apps.googleusercontent.com',
-    iosClientId: '717547014679-5mjcl3dl32vg635go49gf3eeoje9595g.apps.googleusercontent.com',
-    androidClientId: '717547014679-5mjcl3dl32vg635go49gf3eeoje9595g.apps.googleusercontent.com',
-    scopes: ['profile', 'email'],
-    redirectUri: 'https://auth.expo.io/@anonymous/PlaymateApp',
+  // Configure Google Auth with environment variables
+  const redirectUri = makeRedirectUri({
+    scheme: 'playmateapp',
+    path: 'redirect'
   });
 
-  console.log('🔗 Redirect URI:', request?.redirectUri);
+  console.log('🔗 Redirect URI:', redirectUri);
+  console.log('📱 Platform:', Platform.OS);
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    scopes: ['profile', 'email'],
+    redirectUri,
+  });
 
   // Handle Google sign-in response
   useEffect(() => {

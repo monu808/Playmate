@@ -122,14 +122,6 @@ export default function AdminBookingsScreen({ navigation }: any) {
     );
   }
 
-  const stats = {
-    total: bookings.length,
-    pending: bookings.filter((b) => b.status === 'pending').length,
-    confirmed: bookings.filter((b) => b.status === 'confirmed').length,
-    completed: bookings.filter((b) => b.status === 'completed').length,
-    cancelled: bookings.filter((b) => b.status === 'cancelled').length,
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -143,37 +135,6 @@ export default function AdminBookingsScreen({ navigation }: any) {
         <Text style={styles.headerTitle}>All Bookings</Text>
         <View style={{ width: 40 }} />
       </View>
-
-      {/* Stats */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.statsScroll}
-        contentContainerStyle={styles.statsContainer}
-      >
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{stats.total}</Text>
-          <Text style={styles.statLabel}>Total</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: '#f59e0b' }]}>{stats.pending}</Text>
-          <Text style={styles.statLabel}>Pending</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: colors.primary[600] }]}>
-            {stats.confirmed}
-          </Text>
-          <Text style={styles.statLabel}>Confirmed</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: '#10b981' }]}>{stats.completed}</Text>
-          <Text style={styles.statLabel}>Completed</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: colors.error }]}>{stats.cancelled}</Text>
-          <Text style={styles.statLabel}>Cancelled</Text>
-        </View>
-      </ScrollView>
 
       {/* Filters */}
       <ScrollView
@@ -329,46 +290,28 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
-  statsScroll: {
-    maxHeight: 100,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  statCard: {
-    backgroundColor: '#ffffff',
-    padding: spacing.lg,
-    borderRadius: borderRadius.xl,
-    alignItems: 'center',
-    minWidth: 100,
-    ...shadows.md,
-  },
-  statValue: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.textPrimary,
-  },
-  statLabel: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
   filtersScroll: {
-    maxHeight: 60,
+    height: 55,
+    maxHeight: 55,
+    flexGrow: 0,
   },
   filtersContainer: {
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    flexGrow: 0,
   },
   filterButton: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     borderRadius: borderRadius.full,
     backgroundColor: colors.gray[200],
+    marginRight: spacing.sm,
+    minWidth: 80,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterButtonActive: {
     backgroundColor: colors.primary[600],
