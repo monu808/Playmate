@@ -265,7 +265,7 @@ export default function Navigation() {
             <Stack.Screen 
               name="TurfDetail" 
               component={TurfDetailScreen}
-              options={{ headerShown: true, title: 'Turf Details' }}
+              options={{ headerShown: false }}
             />
           </>
         ) : role === 'owner' ? (
@@ -274,7 +274,7 @@ export default function Navigation() {
             <Stack.Screen 
               name="TurfDetail" 
               component={TurfDetailScreen}
-              options={{ headerShown: true, title: 'Turf Details' }}
+              options={{ headerShown: false }}
             />
             <Stack.Screen 
               name="AddTurf" 
@@ -293,7 +293,7 @@ export default function Navigation() {
             <Stack.Screen 
               name="TurfDetail" 
               component={TurfDetailScreen}
-              options={{ headerShown: true, title: 'Turf Details' }}
+              options={{ headerShown: false }}
             />
           </>
         )}

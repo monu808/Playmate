@@ -15,24 +15,44 @@ export const PAYOUT_FEE = {
   NEFT: 3, // ₹3 per NEFT payout (slower)
 } as const;
 
-// Time slots
+// Time slots - 30 minute intervals (10 AM to 11 PM)
 export const TIME_SLOTS = [
-  { startTime: '06:00', endTime: '07:00' },
-  { startTime: '07:00', endTime: '08:00' },
-  { startTime: '08:00', endTime: '09:00' },
-  { startTime: '09:00', endTime: '10:00' },
-  { startTime: '10:00', endTime: '11:00' },
-  { startTime: '11:00', endTime: '12:00' },
-  { startTime: '12:00', endTime: '13:00' },
-  { startTime: '13:00', endTime: '14:00' },
-  { startTime: '14:00', endTime: '15:00' },
-  { startTime: '15:00', endTime: '16:00' },
-  { startTime: '16:00', endTime: '17:00' },
-  { startTime: '17:00', endTime: '18:00' },
-  { startTime: '18:00', endTime: '19:00' },
-  { startTime: '19:00', endTime: '20:00' },
-  { startTime: '20:00', endTime: '21:00' },
-  { startTime: '21:00', endTime: '22:00' },
+  { startTime: '10:00', endTime: '10:30' },
+  { startTime: '10:30', endTime: '11:00' },
+  { startTime: '11:00', endTime: '11:30' },
+  { startTime: '11:30', endTime: '12:00' },
+  { startTime: '12:00', endTime: '12:30' },
+  { startTime: '12:30', endTime: '13:00' },
+  { startTime: '13:00', endTime: '13:30' },
+  { startTime: '13:30', endTime: '14:00' },
+  { startTime: '14:00', endTime: '14:30' },
+  { startTime: '14:30', endTime: '15:00' },
+  { startTime: '15:00', endTime: '15:30' },
+  { startTime: '15:30', endTime: '16:00' },
+  { startTime: '16:00', endTime: '16:30' },
+  { startTime: '16:30', endTime: '17:00' },
+  { startTime: '17:00', endTime: '17:30' },
+  { startTime: '17:30', endTime: '18:00' },
+  { startTime: '18:00', endTime: '18:30' },
+  { startTime: '18:30', endTime: '19:00' },
+  { startTime: '19:00', endTime: '19:30' },
+  { startTime: '19:30', endTime: '20:00' },
+  { startTime: '20:00', endTime: '20:30' },
+  { startTime: '20:30', endTime: '21:00' },
+  { startTime: '21:00', endTime: '21:30' },
+  { startTime: '21:30', endTime: '22:00' },
+  { startTime: '22:00', endTime: '22:30' },
+  { startTime: '22:30', endTime: '23:00' },
+  { startTime: '23:00', endTime: '23:30' },
+  { startTime: '23:30', endTime: '00:00' },
+];
+
+// Common durations for quick selection (in hours)
+export const DURATION_OPTIONS = [
+  { label: '30 min', value: 0.5 },
+  { label: '1 hour', value: 1 },
+  { label: '1.5 hours', value: 1.5 },
+  { label: '2 hours', value: 2 },
 ];
 
 // Amenities options

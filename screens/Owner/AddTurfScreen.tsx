@@ -217,12 +217,24 @@ export default function AddTurfScreen({ navigation }: any) {
 
   const generateDefaultSlots = () => {
     const slots = [];
-    for (let hour = 6; hour < 22; hour++) {
-      const startTime = `${hour.toString().padStart(2, '0')}:00`;
-      const endTime = `${(hour + 1).toString().padStart(2, '0')}:00`;
+    // Generate 30-minute slots from 10:00 AM to 11:00 PM (bookings till 12 AM)
+    for (let hour = 10; hour < 24; hour++) {
+      // First half-hour slot
+      const startTime1 = `${hour.toString().padStart(2, '0')}:00`;
+      const endTime1 = `${hour.toString().padStart(2, '0')}:30`;
       slots.push({
-        startTime,
-        endTime,
+        startTime: startTime1,
+        endTime: endTime1,
+        isBooked: false,
+      });
+      
+      // Second half-hour slot
+      const startTime2 = `${hour.toString().padStart(2, '0')}:30`;
+      const nextHour = hour + 1 === 24 ? '00' : (hour + 1).toString().padStart(2, '0');
+      const endTime2 = `${nextHour}:00`;
+      slots.push({
+        startTime: startTime2,
+        endTime: endTime2,
         isBooked: false,
       });
     }

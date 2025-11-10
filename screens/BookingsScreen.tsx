@@ -31,6 +31,7 @@ const BookingsScreen: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [showQRCode, setShowQRCode] = useState(false);
+  const [expandedBreakdowns, setExpandedBreakdowns] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (user) {
@@ -122,6 +123,18 @@ const BookingsScreen: React.FC = () => {
     );
   };
 
+  const toggleBreakdown = (bookingId: string) => {
+    setExpandedBreakdowns(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(bookingId)) {
+        newSet.delete(bookingId);
+      } else {
+        newSet.add(bookingId);
+      }
+      return newSet;
+    });
+  };
+
   const renderBookingCard = ({ item }: { item: Booking }) => {
     const statusColor = getStatusColor(item.status);
     const canCancel =
@@ -172,28 +185,43 @@ const BookingsScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Payment Breakdown */}
+        {/* Payment Breakdown - Collapsible */}
         {item.paymentBreakdown && (
           <View style={styles.breakdownSection}>
-            <Text style={styles.breakdownTitle}>Payment Details</Text>
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Base Amount</Text>
-              <Text style={styles.breakdownValue}>
-                {formatCurrency(item.paymentBreakdown.baseTurfAmount)}
-              </Text>
-            </View>
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Platform Fee</Text>
-              <Text style={styles.breakdownValue}>
-                {formatCurrency(item.paymentBreakdown.platformCommission)}
-              </Text>
-            </View>
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Gateway Fee</Text>
-              <Text style={styles.breakdownValue}>
-                {formatCurrency(item.paymentBreakdown.razorpayFee)}
-              </Text>
-            </View>
+            <TouchableOpacity 
+              style={styles.breakdownHeader}
+              onPress={() => toggleBreakdown(item.id)}
+            >
+              <Text style={styles.breakdownTitle}>Payment Details</Text>
+              <Ionicons 
+                name={expandedBreakdowns.has(item.id) ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color="#111827" 
+              />
+            </TouchableOpacity>
+            
+            {expandedBreakdowns.has(item.id) && (
+              <>
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>Base Amount</Text>
+                  <Text style={styles.breakdownValue}>
+                    {formatCurrency(item.paymentBreakdown.baseTurfAmount)}
+                  </Text>
+                </View>
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>Platform Fee</Text>
+                  <Text style={styles.breakdownValue}>
+                    {formatCurrency(item.paymentBreakdown.platformCommission)}
+                  </Text>
+                </View>
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>Gateway Fee</Text>
+                  <Text style={styles.breakdownValue}>
+                    {formatCurrency(item.paymentBreakdown.razorpayFee)}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
         )}
 
@@ -462,11 +490,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#e5e7eb',
   },
+  breakdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   breakdownTitle: {
     fontSize: 13,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 8,
   },
   breakdownRow: {
     flexDirection: 'row',

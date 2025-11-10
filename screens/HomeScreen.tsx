@@ -921,7 +921,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius['2xl'],
     ...shadows.lg,
     elevation: 8,
-    height: 170,
+    height: 160,
   },
   locationRow: {
     paddingTop: 16,

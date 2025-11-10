@@ -11,17 +11,15 @@ export function formatCurrency(amount: number): string {
 }
 
 /**
- * Calculate base turf amount (without commission)
+ * Calculate base turf amount (without commission) - supports 30-minute intervals
  */
 export function calculateBaseTurfAmount(
   pricePerHour: number,
   startTime: string,
   endTime: string
 ): number {
-  const start = parseInt(startTime.split(':')[0]);
-  const end = parseInt(endTime.split(':')[0]);
-  const hours = end - start;
-  return pricePerHour * hours;
+  const duration = calculateDuration(startTime, endTime);
+  return pricePerHour * duration;
 }
 
 /**
@@ -77,12 +75,38 @@ export function formatTime(time: string): string {
 }
 
 /**
- * Calculate duration in hours
+ * Calculate duration in hours (supports 30-minute intervals and midnight crossing)
  */
 export function calculateDuration(startTime: string, endTime: string): number {
-  const start = parseInt(startTime.split(':')[0]);
-  const end = parseInt(endTime.split(':')[0]);
-  return end - start;
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const [endHour, endMinute] = endTime.split(':').map(Number);
+  
+  const startTotalMinutes = startHour * 60 + startMinute;
+  let endTotalMinutes = endHour * 60 + endMinute;
+  
+  // Handle midnight crossing (e.g., 23:00 to 00:30)
+  if (endTotalMinutes < startTotalMinutes) {
+    endTotalMinutes += 24 * 60; // Add 24 hours
+  }
+  
+  const durationMinutes = endTotalMinutes - startTotalMinutes;
+  const durationHours = durationMinutes / 60;
+  
+  return durationHours;
+}
+
+/**
+ * Calculate end time from start time and duration in hours
+ */
+export function calculateEndTime(startTime: string, durationHours: number): string {
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const startTotalMinutes = startHour * 60 + startMinute;
+  const endTotalMinutes = startTotalMinutes + (durationHours * 60);
+  
+  const endHour = Math.floor(endTotalMinutes / 60) % 24;
+  const endMinute = endTotalMinutes % 60;
+  
+  return `${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
 }
 
 /**

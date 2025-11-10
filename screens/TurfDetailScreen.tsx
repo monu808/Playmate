@@ -94,19 +94,22 @@ const TurfDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const price = turf.pricePerHour || turf.price || 0;
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header with back button */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#111827" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.favoriteButton}>
-            <Ionicons name="heart-outline" size={24} color="#111827" />
-          </TouchableOpacity>
+        {/* Green Header */}
+        <View style={styles.greenHeader}>
+          <View style={styles.headerContent}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Ionicons name="arrow-back" size={24} color="#ffffff" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Turf Details</Text>
+            <TouchableOpacity style={styles.favoriteButton}>
+              <Ionicons name="heart-outline" size={24} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Image Carousel */}
@@ -315,24 +318,40 @@ const getAmenityIcon = (amenity: string): any => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f8f9fa',
   },
-  header: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+  greenHeader: {
+    backgroundColor: '#16a34a',
+    height: 120,
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    marginBottom: -30,
+    zIndex: 1,
+  },
+  headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    zIndex: 10,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ffffff',
+    letterSpacing: 0.5,
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -345,7 +364,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -357,6 +376,13 @@ const styles = StyleSheet.create({
   imageCarousel: {
     height: 300,
     backgroundColor: '#f3f4f6',
+    marginTop: 31,
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+    overflow: 'hidden',
+    position: 'relative',
+    zIndex: 10,
+    elevation: 10,
   },
   carouselImage: {
     width,

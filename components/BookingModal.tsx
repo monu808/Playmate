@@ -54,6 +54,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showBreakdown, setShowBreakdown] = useState(false);
 
   const price = turf?.pricePerHour || turf?.price || 0;
 
@@ -411,7 +412,6 @@ const BookingModal: React.FC<BookingModalProps> = ({
             <View style={styles.timeSlotRow}>
               {TIME_SLOTS.map((slot, index) => {
                 // For end time, show the endTime of each slot (not startTime)
-                // This ensures user selects actual end time, not another start time
                 const timeToShow = slot.endTime;
                 const isBooked = isTimeSlotBooked(slot.startTime);
                 const isSelected = endTime === timeToShow;
@@ -473,60 +473,73 @@ const BookingModal: React.FC<BookingModalProps> = ({
           )}
         </View>
 
-        {/* Payment Breakdown - CRITICAL SECTION */}
+        {/* Payment Breakdown - COLLAPSIBLE */}
         {startTime && endTime && isValidTimeRange() && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment Breakdown</Text>
-            <View style={styles.breakdownCard}>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>
-                  Base Turf Amount ({duration}h × {formatCurrency(price)})
-                </Text>
-                <Text style={styles.breakdownValue}>
-                  {formatCurrency(breakdown.baseTurfAmount)}
-                </Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Platform Commission</Text>
-                <Text style={styles.breakdownValue}>
-                  {formatCurrency(breakdown.platformCommission)}
-                </Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>
-                  Payment Gateway Fee (2.07%)
-                </Text>
-                <Text style={styles.breakdownValue}>
-                  {formatCurrency(breakdown.razorpayFee)}
-                </Text>
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabelTotal}>Total Amount</Text>
-                <Text style={styles.breakdownValueTotal}>
-                  {formatCurrency(breakdown.totalAmount)}
-                </Text>
-              </View>
-              
-              {/* Owner vs Platform Share Info */}
-              <View style={styles.shareInfoBox}>
-                <Text style={styles.shareInfoTitle}>Payment Distribution</Text>
-                <View style={styles.shareRow}>
-                  <View style={styles.shareItem}>
-                    <Text style={styles.shareLabel}>Turf Owner Gets</Text>
-                    <Text style={styles.shareValue}>
-                      {formatCurrency(breakdown.ownerShare)}
-                    </Text>
-                  </View>
-                  <View style={styles.shareItem}>
-                    <Text style={styles.shareLabel}>Platform Gets</Text>
-                    <Text style={styles.shareValue}>
-                      {formatCurrency(breakdown.platformShare)}
-                    </Text>
+            <TouchableOpacity 
+              style={styles.breakdownHeader}
+              onPress={() => setShowBreakdown(!showBreakdown)}
+            >
+              <Text style={styles.sectionTitle}>Payment Breakdown</Text>
+              <Ionicons 
+                name={showBreakdown ? "chevron-up" : "chevron-down"} 
+                size={24} 
+                color="#111827" 
+              />
+            </TouchableOpacity>
+            
+            {showBreakdown && (
+              <View style={styles.breakdownCard}>
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>
+                    Base Turf Amount ({duration}h × {formatCurrency(price)})
+                  </Text>
+                  <Text style={styles.breakdownValue}>
+                    {formatCurrency(breakdown.baseTurfAmount)}
+                  </Text>
+                </View>
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>Platform Commission</Text>
+                  <Text style={styles.breakdownValue}>
+                    {formatCurrency(breakdown.platformCommission)}
+                  </Text>
+                </View>
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>
+                    Payment Gateway Fee (2.07%)
+                  </Text>
+                  <Text style={styles.breakdownValue}>
+                    {formatCurrency(breakdown.razorpayFee)}
+                  </Text>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabelTotal}>Total Amount</Text>
+                  <Text style={styles.breakdownValueTotal}>
+                    {formatCurrency(breakdown.totalAmount)}
+                  </Text>
+                </View>
+                
+                {/* Owner vs Platform Share Info */}
+                <View style={styles.shareInfoBox}>
+                  <Text style={styles.shareInfoTitle}>Payment Distribution</Text>
+                  <View style={styles.shareRow}>
+                    <View style={styles.shareItem}>
+                      <Text style={styles.shareLabel}>Turf Owner Gets</Text>
+                      <Text style={styles.shareValue}>
+                        {formatCurrency(breakdown.ownerShare)}
+                      </Text>
+                    </View>
+                    <View style={styles.shareItem}>
+                      <Text style={styles.shareLabel}>Platform Gets</Text>
+                      <Text style={styles.shareValue}>
+                        {formatCurrency(breakdown.platformShare)}
+                      </Text>
+                    </View>
                   </View>
                 </View>
               </View>
-            </View>
+            )}
           </View>
         )}
 
@@ -727,12 +740,19 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     fontWeight: '600',
   },
+  breakdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   breakdownCard: {
     backgroundColor: '#f9fafb',
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    marginTop: 8,
   },
   breakdownRow: {
     flexDirection: 'row',
