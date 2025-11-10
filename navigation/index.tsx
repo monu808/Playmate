@@ -4,10 +4,12 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { View, StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { LoadingSpinner } from '../components/ui';
 import { isAdmin } from '../lib/firebase/admin';
 import { SplashScreen } from '../components/SplashScreen';
+import { OnboardingScreen } from '../components/OnboardingScreen';
 
 // User Screens
 import HomeScreen from '../screens/HomeScreen';
@@ -199,6 +201,8 @@ export default function Navigation() {
   const [userIsAdmin, setUserIsAdmin] = useState(false);
   const [checkingRole, setCheckingRole] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
 
   // Check user role - MEMOIZED
   useEffect(() => {
@@ -221,16 +225,36 @@ export default function Navigation() {
     }
   }, [isAuthenticated, user, userData]);
 
+  // Check if user has seen onboarding
+  useEffect(() => {
+    async function checkOnboarding() {
+      try {
+        const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+        if (!hasSeenOnboarding && !isAuthenticated) {
+          setShowOnboarding(true);
+        }
+      } catch (error) {
+        console.error('Error checking onboarding:', error);
+      } finally {
+        setCheckingOnboarding(false);
+      }
+    }
+    checkOnboarding();
+  }, [isAuthenticated]);
+
   // Handle splash screen dismissal
   useEffect(() => {
-    if (showSplash) {
-      // Auto-dismiss splash after initialization
+    if (showSplash && isAuthenticated) {
+      // Show splash only for authenticated users
       const timer = setTimeout(() => {
         setShowSplash(false);
-      }, 2600); // Match the duration in SplashScreen component
+      }, 3000); // Match the duration in SplashScreen component
       return () => clearTimeout(timer);
+    } else if (!isAuthenticated) {
+      // Skip splash for non-authenticated users
+      setShowSplash(false);
     }
-  }, [showSplash]);
+  }, [showSplash, isAuthenticated]);
 
   // PERFORMANCE: Memoize user role calculation (must be before any returns)
   const role = useMemo(() => {
@@ -240,13 +264,29 @@ export default function Navigation() {
     return 'user';
   }, [isAuthenticated, userData, userIsAdmin]);
 
-  // Show splash screen
-  if (showSplash) {
+  // Handle onboarding completion
+  const handleOnboardingComplete = async () => {
+    try {
+      await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+      setShowOnboarding(false);
+    } catch (error) {
+      console.error('Error saving onboarding status:', error);
+      setShowOnboarding(false);
+    }
+  };
+
+  // Show onboarding for new users
+  if (showOnboarding && !isAuthenticated && !checkingOnboarding) {
+    return <OnboardingScreen onComplete={handleOnboardingComplete} />;
+  }
+
+  // Show splash screen for authenticated users
+  if (showSplash && isAuthenticated) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
 
   // Show loading screen while checking auth state
-  if (loading || checkingRole) {
+  if (loading || checkingRole || checkingOnboarding) {
     return (
       <View style={styles.loadingContainer}>
         <LoadingSpinner size="large" />

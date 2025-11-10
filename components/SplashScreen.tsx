@@ -25,65 +25,69 @@ interface SplashScreenProps {
 
 export function SplashScreen({ onFinish, appName = 'PlayMate' }: SplashScreenProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current; // For overall opacity
-  const scaleAnim = useRef(new Animated.Value(0.8)).current; // Entrance scale
+  const scaleAnim = useRef(new Animated.Value(0.3)).current; // Entrance scale - start smaller
   const pulseAnim = useRef(new Animated.Value(1)).current; // Continuous pulse
-  const rotateAnim = useRef(new Animated.Value(0)).current; // Continuous rotation
-  const textTranslate = useRef(new Animated.Value(12)).current; // Text slide-up
+  const textTranslate = useRef(new Animated.Value(30)).current; // Text slide-up - increased
+  const glowAnim = useRef(new Animated.Value(0)).current; // Glow effect
+  const particleAnim = useRef(new Animated.Value(0)).current; // Particle effect
 
   // Keep references to loops so we can stop them on unmount
   const pulseLoopRef = useRef<any>(null);
-  const rotateLoopRef = useRef<any>(null);
 
   useEffect(() => {
-    // Entrance: fade + pop + text slide
+    // Entrance: fade + pop + text slide + glow
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 700,
-        easing: Easing.bezier(0.2, 0.8, 0.2, 1),
+        duration: 800,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
         useNativeDriver: true,
       }),
       Animated.spring(scaleAnim, {
         toValue: 1,
-        friction: 8,
-        tension: 60,
+        friction: 6,
+        tension: 40,
         useNativeDriver: true,
       }),
       Animated.timing(textTranslate, {
         toValue: 0,
-        duration: 700,
+        duration: 900,
+        delay: 200,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(glowAnim, {
+        toValue: 1,
+        duration: 1000,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(particleAnim, {
+        toValue: 1,
+        duration: 1200,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
     ]).start(() => {
-      // After entrance, start gentle pulsing and slow rotation
+      // After entrance, start gentle pulsing
       pulseLoopRef.current = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.04,
-            duration: 900,
-            easing: Easing.inOut(Easing.quad),
+            toValue: 1.06,
+            duration: 1200,
+            easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
           Animated.timing(pulseAnim, {
             toValue: 1,
-            duration: 900,
-            easing: Easing.inOut(Easing.quad),
+            duration: 1200,
+            easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
         ]),
       );
-      // rotateLoopRef.current = Animated.loop(
-      //   Animated.timing(rotateAnim, {
-      //     toValue: 1,
-      //     duration: 14000,
-      //     easing: Easing.linear,
-      //     useNativeDriver: true,
-      //   }),
-      // );
 
-      // pulseLoopRef.current.start();
-      // rotateLoopRef.current.start();
+      pulseLoopRef.current.start();
     });
 
     // Exit after a graceful hold
@@ -91,7 +95,6 @@ export function SplashScreen({ onFinish, appName = 'PlayMate' }: SplashScreenPro
       // Stop infinite loops first for predictable exit
       try {
         pulseLoopRef.current?.stop?.();
-        rotateLoopRef.current?.stop?.();
       } catch (e) {
         // ignore
       }
@@ -99,41 +102,61 @@ export function SplashScreen({ onFinish, appName = 'PlayMate' }: SplashScreenPro
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 0,
-          duration: 600,
-          easing: Easing.bezier(0.2, 0.8, 0.2, 1),
+          duration: 700,
+          easing: Easing.bezier(0.4, 0, 0.2, 1),
           useNativeDriver: true,
         }),
         Animated.timing(scaleAnim, {
-          toValue: 1.12,
-          duration: 600,
-          easing: Easing.out(Easing.cubic),
+          toValue: 1.2,
+          duration: 700,
+          easing: Easing.in(Easing.back(1.3)),
           useNativeDriver: true,
         }),
         Animated.timing(textTranslate, {
-          toValue: -8,
-          duration: 600,
-          easing: Easing.out(Easing.cubic),
+          toValue: -20,
+          duration: 700,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 0,
+          duration: 500,
           useNativeDriver: true,
         }),
       ]).start(() => onFinish && onFinish());
-    }, 2600);
+    }, 3000);
 
     return () => {
       clearTimeout(timer);
       pulseLoopRef.current?.stop?.();
-      rotateLoopRef.current?.stop?.();
     };
-  }, [fadeAnim, scaleAnim, pulseAnim, rotateAnim, textTranslate, onFinish]);
+  }, [fadeAnim, scaleAnim, pulseAnim, textTranslate, glowAnim, particleAnim, onFinish]);
 
-  // Rotation interpolation
-  const rotate = rotateAnim.interpolate({
+  // Glow opacity interpolation
+  const glowOpacity = glowAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
+    outputRange: [0, 0.4],
   });
 
-  // Responsive sizing
-  const logoSize = Math.round(Math.min(width, height) * 0.34);
-  const containerSize = logoSize + 48;
+  // Particle animations
+  const particle1Scale = particleAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+
+  const particle1Translate = particleAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -60],
+  });
+
+  const particle2Translate = particleAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 60],
+  });
+
+  // Responsive sizing - made logo bigger
+  const logoSize = Math.round(Math.min(width, height) * 0.45);
+  const containerSize = logoSize + 60;
 
   return (
     <View style={styles.container}>
@@ -143,23 +166,71 @@ export function SplashScreen({ onFinish, appName = 'PlayMate' }: SplashScreenPro
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
+        {/* Animated background particles */}
         <Animated.View
           style={[
-            styles.card,
+            styles.particle,
+            styles.particle1,
             {
-              width: containerSize,
-              height: containerSize,
-              opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }, { scale: pulseAnim }],
+              opacity: glowOpacity,
+              transform: [
+                { scale: particle1Scale },
+                { translateX: particle1Translate },
+                { translateY: particle1Translate },
+              ],
             },
-            styles.cardShadow,
           ]}
-        >
+        />
+        <Animated.View
+          style={[
+            styles.particle,
+            styles.particle2,
+            {
+              opacity: glowOpacity,
+              transform: [
+                { scale: particle1Scale },
+                { translateX: particle2Translate },
+                { translateY: particle1Translate },
+              ],
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.particle,
+            styles.particle3,
+            {
+              opacity: glowOpacity,
+              transform: [
+                { scale: particle1Scale },
+                { translateX: particle1Translate },
+                { translateY: particle2Translate },
+              ],
+            },
+          ]}
+        />
+
+        {/* Outer glow ring - made bigger */}
+        <Animated.View
+          style={[
+            styles.glowRing,
+            {
+              width: containerSize + 80,
+              height: containerSize + 80,
+              opacity: glowOpacity,
+              transform: [{ scale: pulseAnim }],
+            },
+          ]}
+        />
+
+        {/* Content container to center logo and text together */}
+        <View style={styles.contentContainer}>
+          {/* Logo without rotation */}
           <Animated.View
             style={[
-              styles.logoWrapper,
               {
-                transform: [{ rotate }],
+                opacity: fadeAnim,
+                transform: [{ scale: scaleAnim }, { scale: pulseAnim }],
               },
             ]}
           >
@@ -175,20 +246,24 @@ export function SplashScreen({ onFinish, appName = 'PlayMate' }: SplashScreenPro
               ]}
             />
           </Animated.View>
-        </Animated.View>
 
-        <Animated.View
-          style={[
-            styles.appNameWrap,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: textTranslate }],
-            },
-          ]}
-        >
-          <Text style={styles.appName}>{appName}</Text>
-          <Text style={styles.tagline}>Your match. Your moments.</Text>
-        </Animated.View>
+          <Animated.View
+            style={[
+              styles.appNameWrap,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: textTranslate }],
+              },
+            ]}
+          >
+            <Text style={styles.appName}>{appName}</Text>
+            <View style={styles.taglineContainer}>
+              <View style={styles.taglineDot} />
+              <Text style={styles.tagline}>Your match. Your moments.</Text>
+              <View style={styles.taglineDot} />
+            </View>
+          </Animated.View>
+        </View>
       </LinearGradient>
     </View>
   );
@@ -201,48 +276,72 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  card: {
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 8,
-    // subtle stroke
-    borderWidth: Platform.OS === 'ios' ? 0.6 : 1,
-    borderColor: 'rgba(0,0,0,0.06)',
+  particle: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
-  cardShadow: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.18,
-    shadowRadius: 32,
-    elevation: 18,
+  particle1: {
+    top: '20%',
+    left: '10%',
   },
-  logoWrapper: {
-    justifyContent: 'center',
+  particle2: {
+    top: '20%',
+    right: '10%',
+  },
+  particle3: {
+    bottom: '25%',
+    left: '15%',
+  },
+  glowRing: {
+    position: 'absolute',
+    borderRadius: 1000,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  contentContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
   },
   logoImage: {
-    borderRadius: 18,
-    // a tiny inner shadow effect via overlay (native shadow across platforms is limited)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 12,
   },
   appNameWrap: {
-    marginTop: 18,
+    // marginTop: 30,
     alignItems: 'center',
   },
   appName: {
     color: '#ffffff',
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-    textShadowColor: 'rgba(0,0,0,0.2)',
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textShadowColor: 'rgba(0,0,0,0.3)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+    textShadowRadius: 8,
+  },
+  taglineContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // marginTop: 8,
+    gap: 8,
+  },
+  taglineDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
   },
   tagline: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 12,
-    marginTop: 6,
-    opacity: 0.95,
+    color: 'rgba(255,255,255,0.95)',
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.5,
   },
 });
