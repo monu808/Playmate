@@ -243,12 +243,15 @@ const BookingsScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Bookings</Text>
-        <Text style={styles.headerSubtitle}>
-          {bookings.length} {bookings.length === 1 ? 'booking' : 'bookings'}
-        </Text>
+    <SafeAreaView style={styles.container} edges={[]}>
+      {/* Green Header */}
+      <View style={styles.greenHeader}>
+        <View>
+          <Text style={styles.headerTitle}>My Bookings</Text>
+          <Text style={styles.headerSubtitle}>
+            {bookings.length} {bookings.length === 1 ? 'booking' : 'bookings'}
+          </Text>
+        </View>
       </View>
 
       {/* Filters */}
@@ -328,7 +331,21 @@ const BookingsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f8f9fa',
+  },
+  greenHeader: {
+    backgroundColor: '#16a34a',
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    height: 150,
   },
   header: {
     padding: 16,
@@ -337,20 +354,21 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e5e7eb',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '700',
-    color: '#111827',
+    color: '#ffffff',
+    letterSpacing: 0.5,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#6b7280',
+    color: 'rgba(255, 255, 255, 0.9)',
     marginTop: 4,
   },
   filterContainer: {
     flexDirection: 'row',
     padding: 16,
     gap: 8,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'transparent',
   },
   filterChip: {
     paddingHorizontal: 16,
@@ -377,11 +395,14 @@ const styles = StyleSheet.create({
   },
   bookingCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   cardHeader: {
     flexDirection: 'row',

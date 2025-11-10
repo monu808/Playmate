@@ -212,10 +212,10 @@ const ProfileScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Green Header */}
+        <View style={styles.greenHeader}>
           <Text style={styles.headerTitle}>Profile</Text>
           <TouchableOpacity
             style={styles.editButton}
@@ -224,39 +224,61 @@ const ProfileScreen: React.FC = () => {
             <Ionicons
               name={editMode ? 'close' : 'pencil'}
               size={20}
-              color="#16a34a"
+              color="#ffffff"
             />
           </TouchableOpacity>
         </View>
 
-        {/* Profile Info */}
+        {/* Profile Info with Inline Stats */}
         <View style={styles.profileSection}>
-          <View style={styles.avatarContainer}>
-            <TouchableOpacity onPress={handleSelectImage} activeOpacity={0.8}>
-              {(userData?.photoURL || user?.photoURL) ? (
-                <Image
-                  source={{ uri: (userData?.photoURL || user?.photoURL) as string }}
-                  style={styles.avatarImage}
-                  contentFit="cover"
-                  transition={300}
-                />
-              ) : (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {(userData?.name || user?.email || 'U')[0].toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              <View style={styles.cameraButton}>
-                {uploadingImage ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
+          <View style={styles.profileTopRow}>
+            {/* Avatar */}
+            <View style={styles.avatarContainer}>
+              <TouchableOpacity onPress={handleSelectImage} activeOpacity={0.8}>
+                {(userData?.photoURL || user?.photoURL) ? (
+                  <Image
+                    source={{ uri: (userData?.photoURL || user?.photoURL) as string }}
+                    style={styles.avatarImage}
+                    contentFit="cover"
+                    transition={300}
+                  />
                 ) : (
-                  <Ionicons name="camera" size={18} color="#ffffff" />
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {(userData?.name || user?.email || 'U')[0].toUpperCase()}
+                    </Text>
+                  </View>
                 )}
+                <View style={styles.cameraButton}>
+                  {uploadingImage ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Ionicons name="camera" size={16} color="#ffffff" />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* Stats Row */}
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{stats.totalBookings}</Text>
+                <Text style={styles.statLabel}>Bookings</Text>
               </View>
-            </TouchableOpacity>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{stats.upcomingBookings}</Text>
+                <Text style={styles.statLabel}>Matches</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{stats.completedBookings}</Text>
+                <Text style={styles.statLabel}>Played</Text>
+              </View>
+            </View>
           </View>
 
+          {/* User Info */}
           <View style={styles.infoContainer}>
             {editMode ? (
               <>
@@ -293,73 +315,57 @@ const ProfileScreen: React.FC = () => {
                 <Text style={styles.userName}>
                   {userData?.name || user?.displayName || 'User'}
                 </Text>
-                <Text style={styles.userEmail}>{user?.email}</Text>
-                {(userData?.phoneNumber || user?.phoneNumber) && (
-                  <View style={styles.phoneRow}>
-                    <Ionicons name="call" size={16} color="#6b7280" />
-                    <Text style={styles.userPhone}>{userData?.phoneNumber || user?.phoneNumber}</Text>
-                  </View>
+                <Text style={styles.userBio}>
+                  Plays weekly | Open to team invites
+                </Text>
+                {editMode && (
+                  <TouchableOpacity style={styles.editIconButton}>
+                    <Ionicons name="pencil" size={16} color="#6b7280" />
+                  </TouchableOpacity>
                 )}
               </>
             )}
           </View>
         </View>
 
-        {/* Stats Cards */}
-        <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>Booking Statistics</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Ionicons name="calendar" size={32} color="#16a34a" />
-              <Text style={styles.statNumber}>{stats.totalBookings}</Text>
-              <Text style={styles.statLabel}>Total Bookings</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Ionicons name="time" size={32} color="#3b82f6" />
-              <Text style={styles.statNumber}>{stats.upcomingBookings}</Text>
-              <Text style={styles.statLabel}>Upcoming</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Ionicons name="checkmark-circle" size={32} color="#10b981" />
-              <Text style={styles.statNumber}>{stats.completedBookings}</Text>
-              <Text style={styles.statLabel}>Completed</Text>
-            </View>
-          </View>
-        </View>
-
         {/* Menu Options */}
         <View style={styles.menuSection}>
-          <Text style={styles.sectionTitle}>Settings</Text>
-          
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={() => setEditMode(true)}
-          >
+          <TouchableOpacity style={styles.menuItem}>
             <View style={styles.menuItemLeft}>
-              <Ionicons name="person-circle" size={24} color="#6b7280" />
-              <Text style={styles.menuItemText}>Edit Profile</Text>
+              <View style={styles.menuIconContainer}>
+                <Ionicons name="calendar-outline" size={22} color="#111827" />
+              </View>
+              <Text style={styles.menuItemText}>Upcoming Bookings</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={() => setNotificationsModal(true)}
-          >
+          <TouchableOpacity style={styles.menuItem}>
             <View style={styles.menuItemLeft}>
-              <Ionicons name="notifications" size={24} color="#6b7280" />
-              <Text style={styles.menuItemText}>Notifications</Text>
+              <View style={styles.menuIconContainer}>
+                <Ionicons name="people-outline" size={22} color="#111827" />
+              </View>
+              <Text style={styles.menuItemText}>Team Invites</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={() => setPaymentModal(true)}
-          >
+          <TouchableOpacity style={styles.menuItem}>
             <View style={styles.menuItemLeft}>
-              <Ionicons name="card" size={24} color="#6b7280" />
-              <Text style={styles.menuItemText}>Payment Methods</Text>
+              <View style={styles.menuIconContainer}>
+                <Ionicons name="star-outline" size={22} color="#111827" />
+              </View>
+              <Text style={styles.menuItemText}>Venue Reviews Given</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem}>
+            <View style={styles.menuItemLeft}>
+              <View style={styles.menuIconContainer}>
+                <Ionicons name="time-outline" size={22} color="#111827" />
+              </View>
+              <Text style={styles.menuItemText}>Booking History</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
           </TouchableOpacity>
@@ -369,19 +375,10 @@ const ProfileScreen: React.FC = () => {
             onPress={() => setHelpModal(true)}
           >
             <View style={styles.menuItemLeft}>
-              <Ionicons name="help-circle" size={24} color="#6b7280" />
+              <View style={styles.menuIconContainer}>
+                <Ionicons name="help-circle-outline" size={22} color="#111827" />
+              </View>
               <Text style={styles.menuItemText}>Help & Support</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={() => setTermsModal(true)}
-          >
-            <View style={styles.menuItemLeft}>
-              <Ionicons name="document-text" size={24} color="#6b7280" />
-              <Text style={styles.menuItemText}>Terms & Privacy</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
           </TouchableOpacity>
@@ -391,21 +388,27 @@ const ProfileScreen: React.FC = () => {
             onPress={() => setAboutModal(true)}
           >
             <View style={styles.menuItemLeft}>
-              <Ionicons name="information-circle" size={24} color="#6b7280" />
-              <Text style={styles.menuItemText}>About</Text>
+              <View style={styles.menuIconContainer}>
+                <Ionicons name="settings-outline" size={22} color="#111827" />
+              </View>
+              <Text style={styles.menuItemText}>Settings</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
           </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.menuItem, { borderBottomWidth: 0 }]}
+            onPress={handleLogout}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIconContainer, { backgroundColor: '#fee2e2' }]}>
+                <Ionicons name="log-out-outline" size={22} color="#ef4444" />
+              </View>
+              <Text style={[styles.menuItemText, { color: '#ef4444' }]}>Logout</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#ef4444" />
+          </TouchableOpacity>
         </View>
-
-        {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out" size={20} color="#ef4444" />
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-
-        {/* App Version */}
-        <Text style={styles.version}>Version 1.0.0</Text>
       </ScrollView>
 
       {/* Modals */}
@@ -577,9 +580,27 @@ const ProfileScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f8f9fa',
+  },
+  greenHeader: {
+    backgroundColor: '#16a34a',
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    height: 150,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   header: {
+    backgroundColor: '#ffffffff',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -588,65 +609,50 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e5e7eb',
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  editButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f0fdf4',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileSection: {
-    padding: 16,
-    alignItems: 'center',
-  },
-  avatarContainer: {
-    marginBottom: 16,
-    position: 'relative',
-  },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#16a34a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  avatarImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 4,
-    borderColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  avatarText: {
-    fontSize: 48,
+    fontSize: 28,
     fontWeight: '700',
     color: '#ffffff',
+    letterSpacing: 0.5,
   },
-  cameraButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  editButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  profileSection: {
+    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    margin: 16,
+    marginTop: -40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  profileTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 16,
+  },
+  avatarContainer: {
+    marginRight: 20,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: '#16a34a',
     justifyContent: 'center',
     alignItems: 'center',
@@ -654,19 +660,89 @@ const styles = StyleSheet.create({
     borderColor: '#ffffff',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 5,
+    elevation: 4,
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    borderColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  avatarText: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  cameraButton: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#16a34a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  statsRow: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  statDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: '#e5e7eb',
   },
   infoContainer: {
     width: '100%',
     alignItems: 'center',
   },
   userName: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: '#111827',
     marginBottom: 4,
+  },
+  userBio: {
+    fontSize: 13,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  editIconButton: {
+    marginTop: 8,
+    padding: 4,
   },
   userEmail: {
     fontSize: 14,
@@ -715,83 +791,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  statsSection: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 8,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginTop: 4,
-    textAlign: 'center',
-  },
   menuSection: {
     padding: 16,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    margin: 16,
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   menuItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: '#f3f4f6',
   },
   menuItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 16,
+  },
+  menuIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: '#ebebebff',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   menuItemText: {
-    fontSize: 16,
-    color: '#374151',
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    margin: 16,
-    marginTop: 8,
-    padding: 16,
-    backgroundColor: '#fee2e2',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#fecaca',
-  },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ef4444',
-  },
-  version: {
-    fontSize: 12,
-    color: '#9ca3af',
-    textAlign: 'center',
-    paddingVertical: 16,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#111827',
   },
   // Modal content styles
   settingRow: {
@@ -800,7 +837,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: '#1eb819ff',
   },
   settingInfo: {
     flex: 1,
@@ -819,7 +856,7 @@ const styles = StyleSheet.create({
   infoBox: {
     flexDirection: 'row',
     padding: 16,
-    backgroundColor: '#eff6ff',
+    backgroundColor: '#ffffffff',
     borderRadius: 12,
     marginBottom: 16,
     gap: 12,
