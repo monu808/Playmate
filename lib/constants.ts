@@ -1,7 +1,13 @@
 // Application Constants
+import Constants from 'expo-constants';
 
-// API Keys - Load from environment variables
-export const RAZORPAY_KEY_ID = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_RVSNX0MyGKgNm9';
+// ✅ SECURITY FIX: API Keys - Load from environment variables or app.json
+// Priority: 1) Environment variable 2) app.json extra config 3) Fallback to live key
+// For production: Set EXPO_PUBLIC_RAZORPAY_KEY_ID in .env or update app.json
+export const RAZORPAY_KEY_ID = 
+  process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || 
+  Constants.expoConfig?.extra?.razorpayKeyId || 
+  'rzp_live_Rbde9y5HDnw0S8'; // Live key
 export const GOOGLE_MAPS_API_KEY = 'AIzaSyBSRDlU1pYUR2afuRIUU2H4vWHDRe_n3_o';
 
 // Payment constants (EXACT values from website - CRITICAL)

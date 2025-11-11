@@ -3,6 +3,7 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { subscribeToAuthChanges, getCurrentUser, getUserData } from '../lib/firebase/auth';
 import { User } from '../types';
+import { setCrashlyticsUser } from '../lib/crashlytics';
 
 interface AuthContextType {
   user: FirebaseUser | null;
@@ -43,6 +44,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Fetch user data from Firestore
         const data = await getUserData(firebaseUser.uid);
         setUserData(data);
+        
+        // ✅ PRODUCTION: Set Crashlytics user for better crash tracking
+        try {
+          await setCrashlyticsUser(
+            firebaseUser.uid,
+            firebaseUser.email || undefined,
+            firebaseUser.displayName || undefined
+          );
+        } catch (error) {
+          console.error('Failed to set Crashlytics user:', error);
+        }
       } else {
         setUserData(null);
       }

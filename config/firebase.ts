@@ -3,6 +3,7 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { initializeAuth, getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
+import { getFunctions, Functions } from 'firebase/functions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import with type assertion since getReactNativePersistence exists at runtime
@@ -38,7 +39,8 @@ try {
 
 const db: Firestore = getFirestore(app);
 const storage: FirebaseStorage = getStorage(app);
+const functions: Functions = getFunctions(app);
 
 console.log('🔥 Firebase initialized');
 
-export { app, auth, db, storage };
+export { app, auth, db, storage, functions };

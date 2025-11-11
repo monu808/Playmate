@@ -14,6 +14,7 @@ interface RazorpayWebViewProps {
   amount: number; // in rupees (not paise)
   currency: string;
   keyId: string;
+  orderId?: string; // Razorpay order ID
   name: string;
   description: string;
   prefill: {
@@ -38,6 +39,7 @@ export const RazorpayWebView: React.FC<RazorpayWebViewProps> = ({
   amount,
   currency,
   keyId,
+  orderId,
   name,
   description,
   prefill,
@@ -47,6 +49,15 @@ export const RazorpayWebView: React.FC<RazorpayWebViewProps> = ({
   onDismiss,
 }) => {
   const webViewRef = useRef<WebView>(null);
+
+  console.log('🎯 RazorpayWebView rendered with:', {
+    visible,
+    amount,
+    currency,
+    keyId: keyId?.substring(0, 10) + '...',
+    name,
+    prefill,
+  });
 
   // Generate HTML with Razorpay Checkout
   const generateHTML = () => {
@@ -142,11 +153,11 @@ export const RazorpayWebView: React.FC<RazorpayWebViewProps> = ({
         window.ReactNativeWebView.postMessage(JSON.stringify(data));
       }
     }
-
     var options = {
       "key": "${keyId}",
       "amount": "${amount * 100}",
       "currency": "${currency}",
+      ${orderId ? `"order_id": "${orderId}",` : ''}
       "name": "${name}",
       "description": "${description}",
       "handler": function (response) {

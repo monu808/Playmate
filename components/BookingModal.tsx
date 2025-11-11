@@ -98,8 +98,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
       setEndTime(null);
       setAgreedToTerms(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, selectedDate, turf?.id]); // Don't include loadBookedSlots to avoid loops
+  }, [visible, selectedDate, turf?.id, loadBookedSlots]); // ✅ FIXED: Added loadBookedSlots to dependencies
 
   const isTimeSlotBooked = (time: string) => {
     // Check if this time overlaps with any booked slots
@@ -149,20 +148,29 @@ const BookingModal: React.FC<BookingModalProps> = ({
   const isValidTimeRange = () => {
     if (!startTime || !endTime) return true;
     
-    // Check if any slot in the range is booked
-    const startHour = parseInt(startTime.split(':')[0]);
-    const endHour = parseInt(endTime.split(':')[0]);
+    // ✅ FIXED: Check every 30-minute slot in the range (not just hourly)
+    // Convert times to total minutes for accurate 30-minute interval checking
+    const [startHour, startMin] = startTime.split(':').map(Number);
+    const [endHour, endMin] = endTime.split(':').map(Number);
     
-    for (let hour = startHour; hour < endHour; hour++) {
-      const checkTime = `${hour.toString().padStart(2, '0')}:00`;
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+    
+    // Check each 30-minute slot in the range
+    for (let minutes = startMinutes; minutes < endMinutes; minutes += 30) {
+      const hour = Math.floor(minutes / 60);
+      const minute = minutes % 60;
+      const checkTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      
       if (isTimeSlotBooked(checkTime)) {
         return false;
       }
     }
+    
     return true;
   };
 
-  const handlePayment = async () => {
+  const handlePayment = () => {
     if (!startTime || !endTime) {
       Alert.alert('Error', 'Please select both start and end time');
       return;
@@ -183,8 +191,16 @@ const BookingModal: React.FC<BookingModalProps> = ({
       return;
     }
 
-    // Open WebView payment modal
+    // Show payment modal directly
+    console.log('💰 Opening payment modal for amount:', breakdown.totalAmount);
+    console.log('🔑 Razorpay Key ID:', RAZORPAY_KEY_ID);
+    console.log('👤 User details:', {
+      name: user.displayName,
+      email: user.email,
+      phone: user.phoneNumber,
+    });
     setShowPaymentModal(true);
+    console.log('✅ Payment modal state set to true');
   };
 
   const handlePaymentSuccess = async (paymentData: any) => {
@@ -192,14 +208,18 @@ const BookingModal: React.FC<BookingModalProps> = ({
       setShowPaymentModal(false);
       setLoading(true);
 
+      console.log('✅ Payment received from Razorpay. Verifying with Cloud Function...');
+
+      // ✅ STEP 1: Verify payment signature with Cloud Function
+      const { httpsCallable } = await import('firebase/functions');
+      const { functions } = await import('../config/firebase');
+      const verifyPayment = httpsCallable(functions, 'verifyPayment');
+
       // Calculate payment breakdown
       const baseTurfAmount = calculateBaseTurfAmount(price, startTime!, endTime!);
       const breakdown = calculatePaymentBreakdown(baseTurfAmount);
 
-      // Store selected time for optimistic update
-      const bookedSlot = `${startTime}-${endTime}`;
-
-      // Create booking
+      // Prepare booking data
       const bookingData = {
         userId: user!.uid,
         userName: user!.displayName || 'User',
@@ -213,44 +233,86 @@ const BookingModal: React.FC<BookingModalProps> = ({
         startTime: startTime!,
         endTime: endTime!,
         totalAmount: breakdown.totalAmount,
-        paymentId: paymentData.razorpay_payment_id,
         status: 'confirmed' as const,
         paymentBreakdown: breakdown,
         createdAt: new Date(),
       };
 
-      const result = await createBooking(bookingData);
+      // ✅ STEP 2: Verify payment with simplified Cloud Function
+      let verificationResult: any;
+      try {
+        const verifyPaymentById = httpsCallable(functions, 'verifyPaymentById');
+        const response = await verifyPaymentById({
+          razorpay_payment_id: paymentData.razorpay_payment_id,
+          expectedAmount: breakdown.totalAmount,
+        });
 
-      if (result.success) {
-        // Optimistic UI update - immediately lock the slot
-        setBookedSlots(prev => [...prev, bookedSlot]);
-        
-        // Reset form
-        setStartTime(null);
-        setEndTime(null);
-        setAgreedToTerms(false);
+        verificationResult = response.data;
+        console.log('✅ Payment verified successfully:', verificationResult);
+      } catch (verifyError: any) {
+        console.error('❌ Payment verification failed:', verifyError);
         setLoading(false);
-        
-        // Show success immediately
-        Alert.alert('Success! 🎉', 'Booking confirmed successfully!', [
-          {
-            text: 'OK',
-            onPress: () => {
-              onBookingSuccess();
-            }
-          }
-        ]);
-        
-        // Reload slots in background to sync with server
-        loadBookedSlots();
-      } else {
-        setLoading(false);
-        Alert.alert('Error', result.error || 'Failed to create booking');
+        Alert.alert(
+          'Payment Verification Failed',
+          verifyError.message || 'Could not verify your payment. Please contact support with payment ID: ' + paymentData.razorpay_payment_id
+        );
+        return;
       }
-    } catch (error) {
-      console.error('Booking error:', error);
+
+      // ✅ STEP 3: Create booking with verified payment using Cloud Function
+      const createVerifiedBooking = httpsCallable(functions, 'createVerifiedBooking');
+      
+      try {
+        const bookingResponse = await createVerifiedBooking({
+          bookingData: {
+            ...bookingData,
+            paymentId: verificationResult.payment.id,
+            paymentDetails: verificationResult.payment,
+          },
+          verifiedPayment: verificationResult,
+        });
+
+        const result = bookingResponse.data as any;
+
+        if (result.success) {
+          // Optimistic UI update - immediately lock the slot
+          const bookedSlot = `${startTime}-${endTime}`;
+          setBookedSlots(prev => [...prev, bookedSlot]);
+          
+          // Reset form
+          setStartTime(null);
+          setEndTime(null);
+          setAgreedToTerms(false);
+          setLoading(false);
+          
+          // Show success immediately
+          Alert.alert('Success! 🎉', 'Booking confirmed successfully! Payment verified.', [
+            {
+              text: 'OK',
+              onPress: () => {
+                onBookingSuccess();
+              }
+            }
+          ]);
+          
+          // Reload slots in background to sync with server
+          loadBookedSlots();
+        } else {
+          setLoading(false);
+          Alert.alert('Error', 'Failed to create booking. Please contact support.');
+        }
+      } catch (bookingError: any) {
+        console.error('❌ Booking creation failed:', bookingError);
+        setLoading(false);
+        Alert.alert(
+          'Booking Failed',
+          bookingError.message || 'Could not create booking. Your payment was verified. Please contact support.'
+        );
+      }
+    } catch (error: any) {
+      console.error('❌ Booking error:', error);
       setLoading(false);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      Alert.alert('Error', error.message || 'Something went wrong. Please try again.');
     }
   };
 

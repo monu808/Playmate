@@ -61,12 +61,15 @@
           "locationWhenInUsePermission": "Playmate needs your location to show nearby turfs and calculate distances."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "@react-native-firebase/app",
+      "@react-native-firebase/crashlytics"
     ],
     "extra": {
       "eas": {
         "projectId": "6e79d7b3-ab8f-4950-b3fa-2ce036b63bc5"
-      }
+      },
+      "razorpayKeyId": "rzp_test_RVSNX0MyGKgNm9"
     }
   }
 }

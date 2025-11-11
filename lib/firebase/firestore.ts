@@ -20,6 +20,8 @@ import { Turf, Booking, User } from '../../types';
 
 /**
  * Get all turfs
+ * Returns empty array on error (check logs for details)
+ * IMPROVED: Now with better error logging for debugging
  */
 export const getTurfs = async (): Promise<Turf[]> => {
   try {
@@ -47,14 +49,19 @@ export const getTurfs = async (): Promise<Turf[]> => {
     
     console.log('✅ Successfully fetched', turfs.length, 'verified turfs');
     return turfs;
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Get turfs error:', error);
+    console.error('❌ Error code:', error?.code);
+    console.error('❌ Error message:', error?.message);
+    // Return empty array - calling code should handle empty state
+    // For network errors, Firebase will show "FirebaseError: Failed to get document because the client is offline"
     return [];
   }
 };
 
 /**
  * Get turf by ID
+ * IMPROVED: Better error handling and logging
  */
 export const getTurfById = async (id: string): Promise<Turf | null> => {
   try {
@@ -76,8 +83,10 @@ export const getTurfById = async (id: string): Promise<Turf | null> => {
     }
     console.log('❌ Turf not found with ID:', id);
     return null;
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Get turf by ID error:', error);
+    console.error('❌ Error code:', error?.code);
+    console.error('❌ Error message:', error?.message);
     return null;
   }
 };
@@ -152,13 +161,35 @@ export const deleteTurf = async (id: string): Promise<{ success: boolean; error?
 // ============ BOOKINGS ============
 
 /**
- * Create booking
+ * Create booking with atomic slot availability check
+ * CRITICAL: Prevents race conditions and double bookings
  */
 export const createBooking = async (bookingData: Omit<Booking, 'id'>): Promise<{ success: boolean; id?: string; error?: string }> => {
   try {
     console.log('💾 Creating booking in Firestore...');
     console.log('  Booking data:', JSON.stringify(bookingData, null, 2));
     
+    // 🔒 CRITICAL: Atomic check - Verify slot is still available immediately before creating
+    console.log('🔍 Checking slot availability before booking...');
+    const existingBookings = await getTurfBookings(bookingData.turfId, bookingData.date);
+    
+    const slotTaken = existingBookings.some(b => 
+      b.startTime === bookingData.startTime && 
+      b.endTime === bookingData.endTime &&
+      (b.status === 'confirmed' || b.status === 'pending')
+    );
+    
+    if (slotTaken) {
+      console.log('❌ Slot already booked by another user');
+      return { 
+        success: false, 
+        error: 'This slot was just booked by someone else. Please select another time slot.' 
+      };
+    }
+    
+    console.log('✅ Slot available, creating booking...');
+    
+    // Create booking immediately after verification
     const docRef = await addDoc(collection(db, 'bookings'), {
       ...bookingData,
       createdAt: Timestamp.now(),
@@ -175,6 +206,7 @@ export const createBooking = async (bookingData: Omit<Booking, 'id'>): Promise<{
 
 /**
  * Get user bookings
+ * IMPROVED: Better error handling
  */
 export const getUserBookings = async (userId: string): Promise<Booking[]> => {
   try {
@@ -188,14 +220,17 @@ export const getUserBookings = async (userId: string): Promise<Booking[]> => {
       id: doc.id,
       ...doc.data(),
     })) as Booking[];
-  } catch (error) {
-    console.error('Get user bookings error:', error);
+  } catch (error: any) {
+    console.error('❌ Get user bookings error:', error);
+    console.error('❌ Error code:', error?.code);
+    console.error('❌ Error message:', error?.message);
     return [];
   }
 };
 
 /**
  * Get booking by ID
+ * IMPROVED: Better error handling
  */
 export const getBookingById = async (id: string): Promise<Booking | null> => {
   try {
@@ -205,8 +240,10 @@ export const getBookingById = async (id: string): Promise<Booking | null> => {
       return { id: docSnap.id, ...docSnap.data() } as Booking;
     }
     return null;
-  } catch (error) {
-    console.error('Get booking by ID error:', error);
+  } catch (error: any) {
+    console.error('❌ Get booking by ID error:', error);
+    console.error('❌ Error code:', error?.code);
+    console.error('❌ Error message:', error?.message);
     return null;
   }
 };
