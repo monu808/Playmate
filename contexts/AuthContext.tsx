@@ -4,6 +4,7 @@ import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { getUserData } from '../lib/firebase/auth';
 import { User } from '../types';
 import { setCrashlyticsUser } from '../lib/crashlytics';
+import { initializeNotifications } from '../lib/notifications';
 
 interface AuthContextType {
   user: FirebaseAuthTypes.User | null;
@@ -54,6 +55,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           );
         } catch (error) {
           console.error('Failed to set Crashlytics user:', error);
+        }
+
+        // ✅ Initialize FCM notifications
+        try {
+          await initializeNotifications(firebaseUser.uid);
+        } catch (error) {
+          console.error('Failed to initialize notifications:', error);
         }
       } else {
         setUserData(null);
