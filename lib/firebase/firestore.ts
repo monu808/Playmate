@@ -1,20 +1,10 @@
 // Firebase Firestore Functions
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  orderBy,
-  limit,
-  Timestamp,
-} from 'firebase/firestore';
+import firestore from '@react-native-firebase/firestore';
 import { db } from '../../config/firebase';
 import { Turf, Booking, User } from '../../types';
+
+// Type alias for Firestore Timestamp
+type Timestamp = ReturnType<typeof firestore.Timestamp.now>;
 
 // ============ TURFS ============
 
@@ -26,16 +16,14 @@ import { Turf, Booking, User } from '../../types';
 export const getTurfs = async (): Promise<Turf[]> => {
   try {
     console.log('📡 Fetching turfs from Firestore...');
-    const turfsCol = collection(db, 'turfs');
     
     // Query only verified and active turfs for regular users
-    const q = query(
-      turfsCol,
-      where('isVerified', '==', true),
-      where('isActive', '==', true)
-    );
+    const snapshot = await db
+      .collection('turfs')
+      .where('isVerified', '==', true)
+      .where('isActive', '==', true)
+      .get();
     
-    const snapshot = await getDocs(q);
     console.log('📊 Verified turfs in database:', snapshot.size);
     
     const turfs = snapshot.docs.map(doc => {
@@ -66,8 +54,7 @@ export const getTurfs = async (): Promise<Turf[]> => {
 export const getTurfById = async (id: string): Promise<Turf | null> => {
   try {
     console.log('🔍 Fetching turf with ID:', id);
-    const docRef = doc(db, 'turfs', id);
-    const docSnap = await getDoc(docRef);
+    const docSnap = await db.collection('turfs').doc(id).get();
     if (docSnap.exists()) {
       const data = docSnap.data();
       console.log('✅ Turf found:', data);
@@ -76,7 +63,7 @@ export const getTurfById = async (id: string): Promise<Turf | null> => {
       const turfData = {
         id: docSnap.id,
         ...data,
-        createdAt: data.createdAt?.toDate?.() || new Date(),
+        createdAt: data?.createdAt?.toDate?.() || new Date(),
       };
       
       return turfData as Turf;
@@ -96,8 +83,7 @@ export const getTurfById = async (id: string): Promise<Turf | null> => {
  */
 export const searchTurfs = async (searchTerm: string): Promise<Turf[]> => {
   try {
-    const turfsCol = collection(db, 'turfs');
-    const snapshot = await getDocs(turfsCol);
+    const snapshot = await db.collection('turfs').get();
     const turfs = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -120,9 +106,9 @@ export const searchTurfs = async (searchTerm: string): Promise<Turf[]> => {
  */
 export const addTurf = async (turfData: Omit<Turf, 'id'>): Promise<{ success: boolean; id?: string; error?: string }> => {
   try {
-    const docRef = await addDoc(collection(db, 'turfs'), {
+    const docRef = await db.collection('turfs').add({
       ...turfData,
-      createdAt: Timestamp.now(),
+      createdAt: firestore.FieldValue.serverTimestamp(),
     });
     return { success: true, id: docRef.id };
   } catch (error: any) {
@@ -136,8 +122,7 @@ export const addTurf = async (turfData: Omit<Turf, 'id'>): Promise<{ success: bo
  */
 export const updateTurf = async (id: string, turfData: Partial<Turf>): Promise<{ success: boolean; error?: string }> => {
   try {
-    const docRef = doc(db, 'turfs', id);
-    await updateDoc(docRef, turfData);
+    await db.collection('turfs').doc(id).update(turfData);
     return { success: true };
   } catch (error: any) {
     console.error('Update turf error:', error);
@@ -150,7 +135,7 @@ export const updateTurf = async (id: string, turfData: Partial<Turf>): Promise<{
  */
 export const deleteTurf = async (id: string): Promise<{ success: boolean; error?: string }> => {
   try {
-    await deleteDoc(doc(db, 'turfs', id));
+    await db.collection('turfs').doc(id).delete();
     return { success: true };
   } catch (error: any) {
     console.error('Delete turf error:', error);
@@ -190,9 +175,9 @@ export const createBooking = async (bookingData: Omit<Booking, 'id'>): Promise<{
     console.log('✅ Slot available, creating booking...');
     
     // Create booking immediately after verification
-    const docRef = await addDoc(collection(db, 'bookings'), {
+    const docRef = await db.collection('bookings').add({
       ...bookingData,
-      createdAt: Timestamp.now(),
+      createdAt: firestore.FieldValue.serverTimestamp(),
     });
     
     console.log('✅ Booking created successfully with ID:', docRef.id);
@@ -210,12 +195,11 @@ export const createBooking = async (bookingData: Omit<Booking, 'id'>): Promise<{
  */
 export const getUserBookings = async (userId: string): Promise<Booking[]> => {
   try {
-    const q = query(
-      collection(db, 'bookings'),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
-    );
-    const snapshot = await getDocs(q);
+    const snapshot = await db
+      .collection('bookings')
+      .where('userId', '==', userId)
+      .orderBy('createdAt', 'desc')
+      .get();
     return snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -234,8 +218,7 @@ export const getUserBookings = async (userId: string): Promise<Booking[]> => {
  */
 export const getBookingById = async (id: string): Promise<Booking | null> => {
   try {
-    const docRef = doc(db, 'bookings', id);
-    const docSnap = await getDoc(docRef);
+    const docSnap = await db.collection('bookings').doc(id).get();
     if (docSnap.exists()) {
       return { id: docSnap.id, ...docSnap.data() } as Booking;
     }
@@ -257,15 +240,14 @@ export const getTurfBookings = async (turfId: string, date: string): Promise<Boo
     console.log('  turfId:', turfId);
     console.log('  date:', date);
     
-    const q = query(
-      collection(db, 'bookings'),
-      where('turfId', '==', turfId),
-      where('date', '==', date),
-      where('status', 'in', ['confirmed', 'pending'])
-    );
-    
     console.log('  Executing Firestore query...');
-    const snapshot = await getDocs(q);
+    const snapshot = await db
+      .collection('bookings')
+      .where('turfId', '==', turfId)
+      .where('date', '==', date)
+      .where('status', 'in', ['confirmed', 'pending'])
+      .get();
+    
     console.log('  Query returned:', snapshot.docs.length, 'documents');
     
     const bookings = snapshot.docs.map(doc => {
@@ -294,8 +276,7 @@ export const updateBookingStatus = async (
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed'
 ): Promise<{ success: boolean; error?: string }> => {
   try {
-    const docRef = doc(db, 'bookings', id);
-    await updateDoc(docRef, { status });
+    await db.collection('bookings').doc(id).update({ status });
     return { success: true };
   } catch (error: any) {
     console.error('Update booking status error:', error);
@@ -315,12 +296,11 @@ export const cancelBooking = async (id: string): Promise<{ success: boolean; err
  */
 export const getAllBookings = async (): Promise<Booking[]> => {
   try {
-    const q = query(
-      collection(db, 'bookings'),
-      orderBy('createdAt', 'desc'),
-      limit(100)
-    );
-    const snapshot = await getDocs(q);
+    const snapshot = await db
+      .collection('bookings')
+      .orderBy('createdAt', 'desc')
+      .limit(100)
+      .get();
     return snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -336,7 +316,7 @@ export const getAllBookings = async (): Promise<Booking[]> => {
  */
 export const getAllUsers = async (): Promise<any[]> => {
   try {
-    const snapshot = await getDocs(collection(db, 'users'));
+    const snapshot = await db.collection('users').get();
     return snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),

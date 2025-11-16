@@ -1,23 +1,8 @@
 // Firebase Auth Functions
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  onAuthStateChanged,
-  updateProfile,
-  User as FirebaseUser,
-  GoogleAuthProvider,
-  signInWithCredential,
-} from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, uploadString } from 'firebase/storage';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
-import { auth, db, storage } from '../../config/firebase';
+import auth from '@react-native-firebase/auth';
+import { db, storage } from '../../config/firebase';
 import { User } from '../../types';
 import { isAdminEmail, initializeAdminUser } from './admin';
-
-WebBrowser.maybeCompleteAuthSession();
 
 /**
  * Sign in with Google using Expo AuthSession
@@ -39,70 +24,7 @@ export const signInWithGoogle = async () => {
   }
 };
 
-/**
- * Process Google sign-in response
- */
-export const processGoogleSignIn = async (idToken: string) => {
-  try {
-    console.log('🔐 Processing Google sign-in with ID token...');
-    
-    // Create Firebase credential from Google ID token
-    const credential = GoogleAuthProvider.credential(idToken);
-    console.log('✅ Firebase credential created');
-    
-    // Sign in to Firebase
-    console.log('🔄 Signing in to Firebase...');
-    const userCredential = await signInWithCredential(auth, credential);
-    console.log('✅ Successfully signed in to Firebase');
-    const firebaseUser = userCredential.user;
-    
-    // Check if user document exists
-    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-    
-    if (!userDoc.exists()) {
-      // Create user document for new users
-      const userData: User = {
-        uid: firebaseUser.uid,
-        email: firebaseUser.email || '',
-        name: firebaseUser.displayName || 'Google User',
-        phoneNumber: firebaseUser.phoneNumber || undefined,
-        photoURL: firebaseUser.photoURL || undefined,
-        role: 'user',
-        createdAt: new Date(),
-      };
-      
-      await setDoc(doc(db, 'users', firebaseUser.uid), userData);
-      
-      // Initialize admin if email is in admin list
-      if (firebaseUser.email) {
-        await initializeAdminUser(firebaseUser.uid, firebaseUser.email);
-      }
-    }
-    
-    return { success: true, user: firebaseUser };
-  } catch (error: any) {
-    console.error('❌ Process Google sign in error:', error);
-    console.error('Error code:', error.code);
-    console.error('Error message:', error.message);
-    
-    let userMessage = 'Failed to complete Google sign in';
-    
-    if (error.code === 'auth/network-request-failed') {
-      userMessage = 'Network error: Please check your internet connection and try again.';
-    } else if (error.code === 'auth/invalid-credential') {
-      userMessage = 'Invalid authentication credential. Please try signing in again.';
-    } else if (error.code === 'auth/user-disabled') {
-      userMessage = 'This account has been disabled.';
-    } else if (error.message) {
-      userMessage = error.message;
-    }
-    
-    return {
-      success: false,
-      error: userMessage,
-    };
-  }
-};
+// processGoogleSignIn function removed - Google Sign-In is now handled directly in LoginScreen
 
 /**
  * Sign in with email and password
@@ -110,10 +32,8 @@ export const processGoogleSignIn = async (idToken: string) => {
 export const signIn = async (email: string, password: string) => {
   try {
     console.log('🔐 Attempting to sign in with email:', email);
-    console.log('🌐 Checking Firebase auth state...');
-    console.log('Auth object:', auth ? '✅ Auth initialized' : '❌ Auth not initialized');
     
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const userCredential = await auth().signInWithEmailAndPassword(email, password);
     console.log('✅ Sign in successful!');
     return { success: true, user: userCredential.user };
   } catch (error: any) {
@@ -157,11 +77,11 @@ export const signUp = async (
 ) => {
   try {
     // Create auth user
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const userCredential = await auth().createUserWithEmailAndPassword(email, password);
     const user = userCredential.user;
 
     // Update profile
-    await updateProfile(user, {
+    await user.updateProfile({
       displayName: name,
     });
 
@@ -180,7 +100,7 @@ export const signUp = async (
       userData.businessName = businessName;
     }
 
-    await setDoc(doc(db, 'users', user.uid), userData);
+    await db.collection('users').doc(user.uid).set(userData);
 
     // Initialize admin if email is in admin list (overrides role selection)
     await initializeAdminUser(user.uid, email);
@@ -200,7 +120,7 @@ export const signUp = async (
  */
 export const signOut = async () => {
   try {
-    await firebaseSignOut(auth);
+    await auth().signOut();
     return { success: true };
   } catch (error: any) {
     console.error('Sign out error:', error);
@@ -214,31 +134,31 @@ export const signOut = async () => {
 /**
  * Get current user
  */
-export const getCurrentUser = (): FirebaseUser | null => {
-  return auth.currentUser;
+export const getCurrentUser = () => {
+  return auth().currentUser;
 };
 
 /**
  * Get user data from Firestore
  */
-export const getUserData = async (uid: string): Promise<User | null> => {
+export const getUserData = async (uid: string): Promise<{ success: boolean; user?: User; error?: string }> => {
   try {
-    const userDoc = await getDoc(doc(db, 'users', uid));
+    const userDoc = await db.collection('users').doc(uid).get();
     if (userDoc.exists()) {
-      return userDoc.data() as User;
+      return { success: true, user: userDoc.data() as User };
     }
-    return null;
-  } catch (error) {
+    return { success: false, error: 'User not found' };
+  } catch (error: any) {
     console.error('Get user data error:', error);
-    return null;
+    return { success: false, error: error.message };
   }
 };
 
 /**
  * Subscribe to auth state changes
  */
-export const subscribeToAuthChanges = (callback: (user: FirebaseUser | null) => void) => {
-  return onAuthStateChanged(auth, callback);
+export const subscribeToAuthChanges = (callback: (user: any) => void) => {
+  return auth().onAuthStateChanged(callback);
 };
 
 /**
@@ -249,11 +169,29 @@ export const updateUserProfile = async (
   data: Partial<User>
 ) => {
   try {
-    await setDoc(doc(db, 'users', uid), data, { merge: true });
+    // Check if document exists first
+    const userDoc = await db.collection('users').doc(uid).get();
+    
+    if (!userDoc.exists) {
+      // Document doesn't exist, create it with minimal required fields
+      const currentUser = auth().currentUser;
+      const userData: Partial<User> = {
+        uid,
+        email: currentUser?.email || null,
+        role: 'user',
+        createdAt: new Date(),
+        ...data, // Merge with the data being updated
+      };
+      await db.collection('users').doc(uid).set(userData);
+    } else {
+      // Document exists, update it
+      await db.collection('users').doc(uid).update(data);
+    }
     
     // Also update Firebase Auth profile if displayName or photoURL changed
-    if (auth.currentUser && (data.name || data.photoURL)) {
-      await updateProfile(auth.currentUser, {
+    const currentUser = auth().currentUser;
+    if (currentUser && (data.name || data.photoURL)) {
+      await currentUser.updateProfile({
         displayName: data.name,
         photoURL: data.photoURL,
       });
@@ -280,26 +218,19 @@ export const uploadProfileImage = async (
     console.log('📤 Starting image upload for user:', uid);
     console.log('📷 Image URI:', imageUri);
 
-    // Fetch the image and convert to blob
-    const response = await fetch(imageUri);
-    const blob = await response.blob();
-    console.log('✅ Image converted to blob, size:', blob.size);
+    // Create storage reference - path should match storage rules
+    const filename = `profile_${Date.now()}.jpg`;
+    const storageRef = storage.ref(`profiles/${uid}/${filename}`);
+    console.log('📁 Storage reference created:', `profiles/${uid}/${filename}`);
 
-    // Create storage reference
-    const filename = `profile-${uid}_${Date.now()}.jpg`;
-    const storageRef = ref(storage, `turfs/${filename}`);
-    console.log('📁 Storage reference created:', `turfs/${filename}`);
-
-    // Upload blob directly
+    // Upload file directly using React Native Firebase Storage
     console.log('⬆️ Uploading image...');
-    const uploadResult = await uploadBytes(storageRef, blob, {
-      contentType: 'image/jpeg',
-    });
+    await storageRef.putFile(imageUri);
     console.log('✅ Image uploaded successfully');
 
     // Get download URL
     console.log('🔗 Getting download URL...');
-    const downloadURL = await getDownloadURL(storageRef);
+    const downloadURL = await storageRef.getDownloadURL();
     console.log('✅ Download URL obtained:', downloadURL);
 
     // Update user profile with photo URL

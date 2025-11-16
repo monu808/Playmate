@@ -1,13 +1,9 @@
 // Firebase Configuration for Playmate App
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { initializeAuth, getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
-import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { getFunctions, Functions } from 'firebase/functions';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Import with type assertion since getReactNativePersistence exists at runtime
-const { getReactNativePersistence } = require('firebase/auth') as any;
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+import storage from '@react-native-firebase/storage';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCHOWM71qRhxoE2zkEgPTX4xu4bF1m9gVQ",
@@ -22,25 +18,12 @@ const firebaseConfig = {
 // Initialize Firebase
 const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Initialize Auth with AsyncStorage persistence for React Native
-let auth: Auth;
-try {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage)
-  });
-} catch (error: any) {
-  // If auth is already initialized (e.g., during hot reload), just get it
-  if (error.code === 'auth/already-initialized') {
-    auth = getAuth(app);
-  } else {
-    throw error;
-  }
-}
-
-const db: Firestore = getFirestore(app);
-const storage: FirebaseStorage = getStorage(app);
+// React Native Firebase is auto-initialized from google-services.json
+// Auth, Firestore, and Storage are accessed via their respective functions
+const db = firestore();
+const storageInstance = storage();
 const functions: Functions = getFunctions(app);
 
 console.log('🔥 Firebase initialized');
 
-export { app, auth, db, storage, functions };
+export { app, auth, db, storageInstance as storage, functions };

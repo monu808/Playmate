@@ -14,8 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { signOut } from 'firebase/auth';
-import { auth } from '../config/firebase';
+import auth from '@react-native-firebase/auth';
 import { useAuth } from '../contexts/AuthContext';
 import { getUserBookings } from '../lib/firebase/firestore';
 import { updateUserProfile, uploadProfileImage } from '../lib/firebase/auth';
@@ -89,7 +88,7 @@ const ProfileScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await signOut(auth);
+              await auth().signOut();
               // Navigation will be handled by AuthContext
             } catch (error: any) {
               Alert.alert('Error', error.message);

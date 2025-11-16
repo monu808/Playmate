@@ -1,12 +1,12 @@
 // Auth Context Provider
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { User as FirebaseUser } from 'firebase/auth';
-import { subscribeToAuthChanges, getCurrentUser, getUserData } from '../lib/firebase/auth';
+import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { getUserData } from '../lib/firebase/auth';
 import { User } from '../types';
 import { setCrashlyticsUser } from '../lib/crashlytics';
 
 interface AuthContextType {
-  user: FirebaseUser | null;
+  user: FirebaseAuthTypes.User | null;
   userData: User | null;
   loading: boolean;
   isAuthenticated: boolean;
@@ -32,18 +32,18 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
   const [userData, setUserData] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = subscribeToAuthChanges(async (firebaseUser) => {
+    const unsubscribe = auth().onAuthStateChanged(async (firebaseUser) => {
       setUser(firebaseUser);
       
       if (firebaseUser) {
         // Fetch user data from Firestore
-        const data = await getUserData(firebaseUser.uid);
-        setUserData(data);
+        const result = await getUserData(firebaseUser.uid);
+        setUserData(result.success ? result.user || null : null);
         
         // ✅ PRODUCTION: Set Crashlytics user for better crash tracking
         try {

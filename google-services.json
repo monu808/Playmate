@@ -14,11 +14,27 @@
       },
       "oauth_client": [
         {
-          "client_id": "717547014679-dahif31gbj1c16o06l27piqu623js21q.apps.googleusercontent.com",
+          "client_id": "717547014679-2539a0joaalsgueedg626oc7n2spsj7m.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.monu80850.PlaymateApp",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "717547014679-8lp282fjoh5o3grl1vp9abnb0712gclg.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.monu80850.PlaymateApp",
             "certificate_hash": "e2c4db3b56914c7e5e1fb2e0e29d655208332720"
+          }
+        },
+        {
+          "client_id": "717547014679-fpuv84u6fqf6ke5dloacaie5d44atcbg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.monu80850.PlaymateApp",
+            "certificate_hash": "1cac021225bd05221a0b1dab07c40f320dac9d1f"
           }
         },
         {

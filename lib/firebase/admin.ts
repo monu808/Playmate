@@ -1,4 +1,3 @@
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 
 // Admin credentials - In production, store this securely or use Firebase Admin SDK
@@ -25,7 +24,7 @@ export interface AdminUser {
  */
 export const isAdmin = async (uid: string): Promise<boolean> => {
   try {
-    const userDoc = await getDoc(doc(db, 'users', uid));
+    const userDoc = await db.collection('users').doc(uid).get();
     if (userDoc.exists()) {
       return userDoc.data()?.isAdmin === true;
     }
@@ -48,8 +47,7 @@ export const isAdminEmail = (email: string): boolean => {
  */
 export const grantAdminAccess = async (uid: string): Promise<{ success: boolean; error?: string }> => {
   try {
-    const userRef = doc(db, 'users', uid);
-    await updateDoc(userRef, {
+    await db.collection('users').doc(uid).update({
       isAdmin: true,
       adminSince: new Date(),
       permissions: {

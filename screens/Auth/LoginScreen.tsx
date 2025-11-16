@@ -11,15 +11,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
-import { signIn, processGoogleSignIn } from '../../lib/firebase/auth';
+import auth from '@react-native-firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { signIn } from '../../lib/firebase/auth';
 import { Button, Input } from '../../components/ui';
 import { colors, typography, spacing, borderRadius } from '../../lib/theme';
 import { validateEmail } from '../../lib/utils';
-
-WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
@@ -27,77 +24,63 @@ export default function LoginScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
-  // Configure Google Auth with environment variables
-  const redirectUri = makeRedirectUri({
-    scheme: 'playmateapp',
-    path: 'redirect'
-  });
-
-  console.log('🔗 Redirect URI:', redirectUri);
-  console.log('📱 Platform:', Platform.OS);
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    scopes: ['profile', 'email'],
-    redirectUri,
-  });
-
-  // Handle Google sign-in response
+  // Configure Google Sign-In
   useEffect(() => {
-    if (response?.type === 'success') {
-      const { authentication } = response;
-      console.log('Google auth response:', authentication);
-      
-      if (authentication?.idToken) {
-        handleGoogleSignInSuccess(authentication.idToken);
-      } else if (authentication?.accessToken) {
-        // Use access token if ID token not available
-        handleGoogleSignInWithAccessToken(authentication.accessToken);
-      } else {
-        Alert.alert('Error', 'Unable to get authentication token from Google');
-      }
-    } else if (response?.type === 'error') {
-      console.error('Google sign-in error:', response.error);
-      Alert.alert('Error', 'Something went wrong with Google sign-in. Please try again.');
-    }
-  }, [response]);
+    GoogleSignin.configure({
+      webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+      offlineAccess: true,
+    });
+    console.log('✅ Google Sign-In configured');
+  }, []);
 
   const handleGoogleSignInSuccess = async (idToken: string) => {
     try {
-      const result = await processGoogleSignIn(idToken);
-      if (result.success) {
-        // Navigation handled by auth state change
-      } else {
-        Alert.alert('Google Sign-In Failed', result.error || 'Please try again');
-      }
-    } catch (error: any) {
-      console.error('Process Google sign-in error:', error);
-      Alert.alert('Error', error.message || 'Something went wrong');
-    }
-  };
-
-  const handleGoogleSignInWithAccessToken = async (accessToken: string) => {
-    try {
-      // Fetch user info from Google
-      const userInfoResponse = await fetch(
-        'https://www.googleapis.com/oauth2/v3/userinfo',
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
+      console.log('🔐 Creating Google credential with ID token...');
+      // Create a Google credential with the token
+      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+      console.log('✅ Google credential created');
+      
+      console.log('🔄 Signing in to Firebase with credential...');
+      // Sign-in the user with the credential
+      const userCredential = await auth().signInWithCredential(googleCredential);
+      console.log('✅ Successfully signed in to Firebase!');
+      
+      // Always check and create/update user document
+      const { db } = await import('../../config/firebase');
+      const { initializeAdminUser } = await import('../../lib/firebase/admin');
+      
+      const firebaseUser = userCredential.user;
+      const userDoc = await db.collection('users').doc(firebaseUser.uid).get();
+      
+      if (!userDoc.exists()) {
+        console.log('🆕 User document does not exist - creating...');
+        const userData = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          name: firebaseUser.displayName || 'Google User',
+          phoneNumber: firebaseUser.phoneNumber || undefined,
+          photoURL: firebaseUser.photoURL || undefined,
+          role: 'user',
+          createdAt: new Date(),
+        };
+        
+        await db.collection('users').doc(firebaseUser.uid).set(userData);
+        console.log('✅ User document created');
+        
+        // Initialize admin if email is in admin list
+        if (firebaseUser.email) {
+          await initializeAdminUser(firebaseUser.uid, firebaseUser.email);
         }
-      );
+      } else {
+        console.log('✅ User document already exists');
+      }
       
-      const userInfo = await userInfoResponse.json();
-      console.log('Google user info:', userInfo);
-      
-      Alert.alert(
-        'Google Sign-In',
-        `Signed in as ${userInfo.name || userInfo.email}. Firebase integration coming soon!`
-      );
+      // Navigation handled by auth state change
     } catch (error: any) {
-      console.error('Fetch user info error:', error);
-      Alert.alert('Error', 'Failed to get user information');
+      console.error('❌ Google sign-in error:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      Alert.alert('Error', error.message || 'Failed to sign in with Google');
     }
   };
 
@@ -141,9 +124,40 @@ export default function LoginScreen({ navigation }: any) {
 
   const handleGoogleSignIn = async () => {
     try {
-      await promptAsync();
+      setLoading(true);
+      console.log('🔐 Starting Google Sign-In...');
+      
+      // Check if device supports Google Play services
+      await GoogleSignin.hasPlayServices();
+      
+      // Sign in with Google
+      const userInfo = await GoogleSignin.signIn();
+      console.log('✅ Google Sign-In successful:', userInfo.data?.user.email);
+      
+      // Get ID token for Firebase authentication
+      const idToken = userInfo.data?.idToken;
+      
+      if (!idToken) {
+        throw new Error('No ID token received from Google');
+      }
+      
+      // Process sign-in with Firebase
+      await handleGoogleSignInSuccess(idToken);
+      
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Something went wrong');
+      console.error('❌ Google Sign-In error:', error);
+      
+      if (error.code === 'SIGN_IN_CANCELLED') {
+        console.log('User cancelled sign-in');
+      } else if (error.code === 'IN_PROGRESS') {
+        Alert.alert('Please wait', 'Sign-in already in progress');
+      } else if (error.code === 'PLAY_SERVICES_NOT_AVAILABLE') {
+        Alert.alert('Error', 'Google Play Services not available');
+      } else {
+        Alert.alert('Error', error.message || 'Failed to sign in with Google');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -218,7 +232,7 @@ export default function LoginScreen({ navigation }: any) {
             <TouchableOpacity
               style={styles.googleButton}
               onPress={handleGoogleSignIn}
-              disabled={loading || !request}
+              disabled={loading}
             >
               <Ionicons name="logo-google" size={20} color="#DB4437" />
               <Text style={styles.googleButtonText}>Continue with Google</Text>
