@@ -20,6 +20,8 @@ import ProfileScreen from '../screens/ProfileScreen';
 // Auth Screens
 import LoginScreen from '../screens/Auth/LoginScreen';
 import SignupScreen from '../screens/Auth/SignupScreen';
+import PhoneSignInScreen from '../screens/Auth/PhoneSignInScreen';
+import EmailSignInScreen from '../screens/Auth/EmailSignInScreen';
 
 // Admin Screens
 import AdminDashboardScreen from '../screens/Admin/AdminDashboardScreen';
@@ -51,6 +53,8 @@ export type RootStackParamList = {
 export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
+  PhoneSignIn: undefined;
+  EmailSignIn: undefined;
 };
 
 export type MainTabParamList = {
@@ -82,7 +86,6 @@ const AuthStack = createStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 const AdminStack = createStackNavigator<AdminStackParamList>();
 const OwnerTab = createBottomTabNavigator<OwnerTabParamList>();
-
 function AuthNavigator() {
   return (
     <AuthStack.Navigator
@@ -92,6 +95,8 @@ function AuthNavigator() {
     >
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Signup" component={SignupScreen} />
+      <AuthStack.Screen name="PhoneSignIn" component={PhoneSignInScreen} />
+      <AuthStack.Screen name="EmailSignIn" component={EmailSignInScreen} />
     </AuthStack.Navigator>
   );
 }

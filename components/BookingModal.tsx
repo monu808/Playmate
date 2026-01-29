@@ -210,10 +210,8 @@ const BookingModal: React.FC<BookingModalProps> = ({
 
       console.log('✅ Payment received from Razorpay. Verifying with Cloud Function...');
 
-      // ✅ STEP 1: Verify payment signature with Cloud Function
-      const { httpsCallable } = await import('firebase/functions');
+      // ✅ STEP 1: Use React Native Firebase Functions (automatically includes auth token)
       const { functions } = await import('../config/firebase');
-      const verifyPayment = httpsCallable(functions, 'verifyPayment');
 
       // Calculate payment breakdown
       const baseTurfAmount = calculateBaseTurfAmount(price, startTime!, endTime!);
@@ -238,10 +236,10 @@ const BookingModal: React.FC<BookingModalProps> = ({
         createdAt: new Date(),
       };
 
-      // ✅ STEP 2: Verify payment with simplified Cloud Function
+      // ✅ STEP 2: Verify payment with React Native Firebase Functions
       let verificationResult: any;
       try {
-        const verifyPaymentById = httpsCallable(functions, 'verifyPaymentById');
+        const verifyPaymentById = functions.httpsCallable('verifyPaymentById');
         const response = await verifyPaymentById({
           razorpay_payment_id: paymentData.razorpay_payment_id,
           expectedAmount: breakdown.totalAmount,
@@ -260,7 +258,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
       }
 
       // ✅ STEP 3: Create booking with verified payment using Cloud Function
-      const createVerifiedBooking = httpsCallable(functions, 'createVerifiedBooking');
+      const createVerifiedBooking = functions.httpsCallable('createVerifiedBooking');
       
       try {
         const bookingResponse = await createVerifiedBooking({

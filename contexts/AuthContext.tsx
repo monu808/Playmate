@@ -38,6 +38,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let unsubscribeNotifications: (() => void) | null = null;
+    let notificationsInitialized = false;
+
     const unsubscribe = auth().onAuthStateChanged(async (firebaseUser) => {
       setUser(firebaseUser);
       
@@ -57,20 +60,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           console.error('Failed to set Crashlytics user:', error);
         }
 
-        // ✅ Initialize FCM notifications
-        try {
-          await initializeNotifications(firebaseUser.uid);
-        } catch (error) {
-          console.error('Failed to initialize notifications:', error);
+        // ✅ Initialize FCM notifications only once
+        if (!notificationsInitialized) {
+          try {
+            unsubscribeNotifications = await initializeNotifications(firebaseUser.uid);
+            notificationsInitialized = true;
+            console.log('🔔 Notification listeners registered');
+          } catch (error) {
+            console.error('Failed to initialize notifications:', error);
+          }
         }
       } else {
         setUserData(null);
+        // Clean up notification listeners on logout
+        if (unsubscribeNotifications) {
+          unsubscribeNotifications();
+          unsubscribeNotifications = null;
+          notificationsInitialized = false;
+          console.log('🔕 Notification listeners cleaned up');
+        }
       }
       
       setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      // Clean up notification listeners when component unmounts
+      if (unsubscribeNotifications) {
+        unsubscribeNotifications();
+        console.log('🔕 Notification listeners cleaned up on unmount');
+      }
+    };
   }, []);
 
   const value = {

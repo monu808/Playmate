@@ -94,22 +94,6 @@ export function BookingQRCode({
           </View>
         </View>
 
-        <View style={styles.instructionsCard}>
-          <View style={styles.instructionHeader}>
-            <Ionicons name="information-circle" size={24} color={colors.primary[600]} />
-            <Text style={styles.instructionTitle}>How to Use</Text>
-          </View>
-          <Text style={styles.instructionText}>
-            • Show this QR code to the turf admin on arrival
-          </Text>
-          <Text style={styles.instructionText}>
-            • Admin will scan to verify your booking
-          </Text>
-          <Text style={styles.instructionText}>
-            • Keep this code safe until check-in
-          </Text>
-        </View>
-
         <View style={styles.actions}>
           <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
             <Ionicons name="share-outline" size={20} color="white" />
@@ -189,31 +173,6 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.gray[200],
     marginVertical: spacing.sm,
-  },
-  instructionsCard: {
-    backgroundColor: colors.primary[50],
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.primary[200],
-    marginBottom: spacing.lg,
-  },
-  instructionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  instructionTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold,
-    color: colors.primary[700],
-    marginLeft: spacing.sm,
-  },
-  instructionText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.gray[700],
-    marginBottom: spacing.xs,
-    paddingLeft: spacing.md,
   },
   actions: {
     gap: spacing.md,

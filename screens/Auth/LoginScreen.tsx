@@ -19,10 +19,7 @@ import { colors, typography, spacing, borderRadius } from '../../lib/theme';
 import { validateEmail } from '../../lib/utils';
 
 export default function LoginScreen({ navigation }: any) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   // Configure Google Sign-In
   useEffect(() => {
@@ -30,7 +27,6 @@ export default function LoginScreen({ navigation }: any) {
       webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
       offlineAccess: true,
     });
-    console.log('✅ Google Sign-In configured');
   }, []);
 
   const handleGoogleSignInSuccess = async (idToken: string) => {
@@ -58,8 +54,8 @@ export default function LoginScreen({ navigation }: any) {
           uid: firebaseUser.uid,
           email: firebaseUser.email || '',
           name: firebaseUser.displayName || 'Google User',
-          phoneNumber: firebaseUser.phoneNumber || undefined,
-          photoURL: firebaseUser.photoURL || undefined,
+          phoneNumber: firebaseUser.phoneNumber || null,
+          photoURL: firebaseUser.photoURL || null,
           role: 'user',
           createdAt: new Date(),
         };
@@ -81,44 +77,6 @@ export default function LoginScreen({ navigation }: any) {
       console.error('Error code:', error.code);
       console.error('Error message:', error.message);
       Alert.alert('Error', error.message || 'Failed to sign in with Google');
-    }
-  };
-
-  const validateForm = (): boolean => {
-    const newErrors: { email?: string; password?: string } = {};
-
-    if (!email) {
-      newErrors.email = 'Email is required';
-    } else if (!validateEmail(email)) {
-      newErrors.email = 'Please enter a valid email';
-    }
-
-    if (!password) {
-      newErrors.password = 'Password is required';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleLogin = async () => {
-    if (!validateForm()) return;
-
-    setLoading(true);
-    try {
-      const result = await signIn(email.trim(), password);
-      
-      if (result.success) {
-        // Navigation will be handled by auth state change
-      } else {
-        Alert.alert('Login Failed', result.error || 'Please check your credentials');
-      }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Something went wrong');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -181,52 +139,19 @@ export default function LoginScreen({ navigation }: any) {
             <Text style={styles.subtitle}>Sign in to book your turf</Text>
           </View>
 
-          {/* Form */}
+          {/* Primary Auth Methods */}
           <View style={styles.form}>
-            <Input
-              label="Email"
-              placeholder="Enter your email"
-              value={email}
-              onChangeText={(text) => {
-                setEmail(text);
-                if (errors.email) setErrors({ ...errors, email: undefined });
-              }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoComplete="email"
-              error={errors.email}
-              leftIcon={<Ionicons name="mail-outline" size={20} color={colors.gray[500]} />}
-            />
-
-            <Input
-              label="Password"
-              placeholder="Enter your password"
-              value={password}
-              onChangeText={(text) => {
-                setPassword(text);
-                if (errors.password) setErrors({ ...errors, password: undefined });
-              }}
-              secureTextEntry
-              autoComplete="password"
-              error={errors.password}
-              leftIcon={<Ionicons name="lock-closed-outline" size={20} color={colors.gray[500]} />}
-            />
-
-            <Button
-              text="Sign In"
-              onPress={handleLogin}
-              loading={loading}
+            {/* Phone Sign-In Button - PRIMARY */}
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => navigation.navigate('PhoneSignIn')}
               disabled={loading}
-              fullWidth
-              style={styles.button}
-            />
-
-            {/* Divider */}
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>OR</Text>
-              <View style={styles.dividerLine} />
-            </View>
+            >
+              <View style={styles.primaryButtonContent}>
+                <Ionicons name="call" size={24} color="#ffffff" />
+                <Text style={styles.primaryButtonText}>Continue with Phone</Text>
+              </View>
+            </TouchableOpacity>
 
             {/* Google Sign-In Button */}
             <TouchableOpacity
@@ -236,6 +161,16 @@ export default function LoginScreen({ navigation }: any) {
             >
               <Ionicons name="logo-google" size={20} color="#DB4437" />
               <Text style={styles.googleButtonText}>Continue with Google</Text>
+            </TouchableOpacity>
+
+            {/* Email Sign-In Button */}
+            <TouchableOpacity
+              style={styles.emailButton}
+              onPress={() => navigation.navigate('EmailSignIn')}
+              disabled={loading}
+            >
+              <Ionicons name="mail-outline" size={20} color={colors.textPrimary} />
+              <Text style={styles.emailButtonText}>Sign in with Email</Text>
             </TouchableOpacity>
 
             <View style={styles.footer}>
@@ -293,21 +228,27 @@ const styles = StyleSheet.create({
   button: {
     marginTop: spacing.lg,
   },
-  divider: {
+  primaryButton: {
+    backgroundColor: colors.primary[600],
+    paddingVertical: spacing.lg,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  primaryButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: spacing.xl,
+    justifyContent: 'center',
+    gap: spacing.md,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.gray[300],
-  },
-  dividerText: {
-    marginHorizontal: spacing.md,
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
+  primaryButtonText: {
+    fontSize: typography.fontSize.lg,
+    color: '#ffffff',
+    fontWeight: typography.fontWeight.bold,
   },
   googleButton: {
     flexDirection: 'row',
@@ -319,8 +260,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.gray[300],
     gap: spacing.sm,
+    marginBottom: spacing.md,
   },
   googleButtonText: {
+    fontSize: typography.fontSize.base,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  emailButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    paddingVertical: spacing.md + 2,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.gray[300],
+    gap: spacing.sm,
+  },
+  emailButtonText: {
     fontSize: typography.fontSize.base,
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.semibold,

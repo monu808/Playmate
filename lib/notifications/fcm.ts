@@ -89,13 +89,18 @@ export const initializeFCM = async (userId: string): Promise<void> => {
     // Get FCM token
     const token = await getFCMToken();
     if (token) {
-      await saveFCMToken(userId, token);
+      console.log('🎫 ============================================');
+      console.log('🎫 FCM TOKEN FOR USER:', userId);
+      console.log('🎫 TOKEN:', token);
+      console.log('🎫 ============================================');
+      // Commenting out DB save for now
+      // await saveFCMToken(userId, token);
     }
 
     // Listen for token refresh
     messaging().onTokenRefresh(async (newToken) => {
       console.log('🔄 FCM token refreshed:', newToken);
-      await saveFCMToken(userId, newToken);
+      // await saveFCMToken(userId, newToken);
     });
 
     console.log('✅ FCM initialized successfully');

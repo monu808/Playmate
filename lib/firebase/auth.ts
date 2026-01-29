@@ -259,3 +259,107 @@ export const uploadProfileImage = async (
     };
   }
 };
+
+/**
+ * Send OTP to phone number
+ * Returns confirmation object that can be used to verify the code
+ */
+export const sendPhoneOTP = async (phoneNumber: string) => {
+  try {
+    console.log('📱 Sending OTP to:', phoneNumber);
+    
+    // Firebase requires phone number in E.164 format (e.g., +919876543210)
+    const confirmation = await auth().signInWithPhoneNumber(phoneNumber);
+    console.log('✅ OTP sent successfully');
+    
+    return {
+      success: true,
+      confirmation,
+    };
+  } catch (error: any) {
+    console.error('❌ Send OTP error:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    
+    let userMessage = 'Failed to send OTP';
+    
+    if (error.code === 'auth/invalid-phone-number') {
+      userMessage = 'Invalid phone number format. Use format: +91XXXXXXXXXX';
+    } else if (error.code === 'auth/too-many-requests') {
+      userMessage = 'Too many attempts. Please try again later.';
+    } else if (error.code === 'auth/quota-exceeded') {
+      userMessage = 'SMS quota exceeded. Please try again later.';
+    } else if (error.message) {
+      userMessage = error.message;
+    }
+    
+    return {
+      success: false,
+      error: userMessage,
+    };
+  }
+};
+
+/**
+ * Verify OTP and complete phone authentication
+ */
+export const verifyPhoneOTP = async (
+  confirmation: any,
+  code: string
+): Promise<{ success: boolean; user?: any; error?: string; isNewUser?: boolean }> => {
+  try {
+    console.log('🔐 Verifying OTP code...');
+    
+    // Confirm the code
+    const userCredential = await confirmation.confirm(code);
+    console.log('✅ Phone number verified successfully!');
+    
+    const firebaseUser = userCredential.user;
+    
+    // Check if user document exists in Firestore
+    const userDoc = await db.collection('users').doc(firebaseUser.uid).get();
+    const isNewUser = !userDoc.exists();
+    
+    if (isNewUser) {
+      console.log('🆕 New user - creating user document...');
+      const userData = {
+        uid: firebaseUser.uid,
+        phoneNumber: firebaseUser.phoneNumber || '',
+        name: firebaseUser.displayName || 'User',
+        role: 'user',
+        createdAt: new Date(),
+      };
+      
+      await db.collection('users').doc(firebaseUser.uid).set(userData);
+      console.log('✅ User document created');
+    } else {
+      console.log('✅ Existing user signed in');
+    }
+    
+    return {
+      success: true,
+      user: firebaseUser,
+      isNewUser,
+    };
+  } catch (error: any) {
+    console.error('❌ Verify OTP error:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    
+    let userMessage = 'Failed to verify OTP';
+    
+    if (error.code === 'auth/invalid-verification-code') {
+      userMessage = 'Invalid OTP. Please check the code and try again.';
+    } else if (error.code === 'auth/code-expired') {
+      userMessage = 'OTP expired. Please request a new code.';
+    } else if (error.message) {
+      userMessage = error.message;
+    }
+    
+    return {
+      success: false,
+      error: userMessage,
+    };
+  }
+};
+
