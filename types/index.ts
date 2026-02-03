@@ -114,6 +114,20 @@ export interface Booking {
   createdAt: Date;
 }
 
+// Blocked/Locked slots for offline bookings
+export interface BlockedSlot {
+  id: string;
+  turfId: string;
+  turfName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  reason?: string;           // Optional reason (e.g., "Phone booking - John")
+  blockedBy: string;         // Owner/Admin ID who blocked
+  blockedByName: string;
+  createdAt: Date;
+}
+
 // Payment breakdown type (CRITICAL)
 export interface PaymentBreakdown {
   baseTurfAmount: number;        // Original turf price

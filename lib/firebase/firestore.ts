@@ -1,7 +1,7 @@
 // Firebase Firestore Functions
 import firestore from '@react-native-firebase/firestore';
 import { db } from '../../config/firebase';
-import { Turf, Booking, User } from '../../types';
+import { Turf, Booking, User, BlockedSlot } from '../../types';
 
 // Type alias for Firestore Timestamp
 type Timestamp = ReturnType<typeof firestore.Timestamp.now>;
@@ -324,5 +324,141 @@ export const getAllUsers = async (): Promise<any[]> => {
   } catch (error) {
     console.error('Get all users error:', error);
     return [];
+  }
+};
+
+// ============ BLOCKED SLOTS ============
+
+/**
+ * Get blocked slots for a specific turf on a specific date
+ */
+export const getBlockedSlots = async (turfId: string, date: string): Promise<BlockedSlot[]> => {
+  try {
+    console.log('🔒 Fetching blocked slots for turf:', turfId, 'date:', date);
+    const snapshot = await db
+      .collection('blockedSlots')
+      .where('turfId', '==', turfId)
+      .where('date', '==', date)
+      .get();
+    
+    const blockedSlots = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as BlockedSlot[];
+    
+    console.log('🔒 Found', blockedSlots.length, 'blocked slots');
+    return blockedSlots;
+  } catch (error) {
+    console.error('❌ Get blocked slots error:', error);
+    return [];
+  }
+};
+
+/**
+ * Get all blocked slots for a turf (for management screen)
+ */
+export const getAllBlockedSlotsForTurf = async (turfId: string): Promise<BlockedSlot[]> => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const snapshot = await db
+      .collection('blockedSlots')
+      .where('turfId', '==', turfId)
+      .where('date', '>=', today)
+      .orderBy('date', 'asc')
+      .get();
+    
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as BlockedSlot[];
+  } catch (error) {
+    console.error('❌ Get all blocked slots error:', error);
+    return [];
+  }
+};
+
+/**
+ * Create a blocked slot (manual lock)
+ */
+export const createBlockedSlot = async (
+  slotData: Omit<BlockedSlot, 'id' | 'createdAt'>
+): Promise<{ success: boolean; id?: string; error?: string }> => {
+  try {
+    console.log('🔒 Creating blocked slot:', slotData);
+    
+    // Check for existing bookings in this slot
+    const existingBookings = await getTurfBookings(slotData.turfId, slotData.date);
+    const hasConflict = existingBookings.some(booking => {
+      const bookingStart = booking.startTime;
+      const bookingEnd = booking.endTime;
+      return !(slotData.endTime <= bookingStart || slotData.startTime >= bookingEnd);
+    });
+    
+    if (hasConflict) {
+      return { success: false, error: 'This slot conflicts with an existing booking' };
+    }
+    
+    // Check for existing blocked slots
+    const existingBlocked = await getBlockedSlots(slotData.turfId, slotData.date);
+    const hasBlockedConflict = existingBlocked.some(blocked => {
+      return !(slotData.endTime <= blocked.startTime || slotData.startTime >= blocked.endTime);
+    });
+    
+    if (hasBlockedConflict) {
+      return { success: false, error: 'This slot is already blocked' };
+    }
+    
+    // Filter out undefined values (Firestore doesn't accept them)
+    const cleanData: Record<string, any> = {};
+    Object.entries(slotData).forEach(([key, value]) => {
+      if (value !== undefined) {
+        cleanData[key] = value;
+      }
+    });
+    
+    const docRef = await db.collection('blockedSlots').add({
+      ...cleanData,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+    });
+    
+    console.log('✅ Blocked slot created:', docRef.id);
+    return { success: true, id: docRef.id };
+  } catch (error: any) {
+    console.error('❌ Create blocked slot error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Delete a blocked slot (unlock)
+ */
+export const deleteBlockedSlot = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    await db.collection('blockedSlots').doc(id).delete();
+    console.log('✅ Blocked slot deleted:', id);
+    return { success: true };
+  } catch (error: any) {
+    console.error('❌ Delete blocked slot error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Get combined unavailable slots (bookings + blocked) for a turf on a date
+ */
+export const getUnavailableSlots = async (
+  turfId: string,
+  date: string
+): Promise<{ bookings: Booking[]; blockedSlots: BlockedSlot[] }> => {
+  try {
+    const [bookings, blockedSlots] = await Promise.all([
+      getTurfBookings(turfId, date),
+      getBlockedSlots(turfId, date),
+    ]);
+    
+    return { bookings, blockedSlots };
+  } catch (error) {
+    console.error('❌ Get unavailable slots error:', error);
+    return { bookings: [], blockedSlots: [] };
   }
 };

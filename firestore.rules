@@ -89,6 +89,30 @@ service cloud.firestore {
                       (request.auth.uid == resource.data.userId || isAdmin());
     }
     
+    // Blocked Slots collection - for manual slot locking by owners/admins
+    match /blockedSlots/{slotId} {
+      // Anyone authenticated can read blocked slots (needed to check slot availability)
+      allow read: if isAuthenticated();
+      
+      // Owners can create blocked slots for their own turfs
+      // Admins can create blocked slots for any turf
+      allow create: if isAuthenticated() && 
+                      (isAdmin() || 
+                       (isOwnerRole() && 
+                        exists(/databases/$(database)/documents/turfs/$(request.resource.data.turfId)) &&
+                        get(/databases/$(database)/documents/turfs/$(request.resource.data.turfId)).data.ownerId == request.auth.uid));
+      
+      // Owners can delete their own blocked slots, admins can delete any
+      allow delete: if isAuthenticated() && 
+                      (isAdmin() || 
+                       (isOwnerRole() && 
+                        exists(/databases/$(database)/documents/turfs/$(resource.data.turfId)) &&
+                        get(/databases/$(database)/documents/turfs/$(resource.data.turfId)).data.ownerId == request.auth.uid));
+      
+      // No updates needed - just delete and recreate if needed
+      allow update: if false;
+    }
+    
     // Analytics collection (admin only)
     match /analytics/{document=**} {
       allow read, write: if isAdmin();

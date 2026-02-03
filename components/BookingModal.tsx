@@ -27,7 +27,7 @@ import {
   calculateDuration,
 } from '../lib/utils';
 import { TIME_SLOTS, RAZORPAY_KEY_ID } from '../lib/constants';
-import { createBooking, getTurfBookings } from '../lib/firebase/firestore';
+import { createBooking, getUnavailableSlots } from '../lib/firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { theme } from '../lib/theme';
 // WebView-based Razorpay (works in Expo Go!)
@@ -68,22 +68,26 @@ const BookingModal: React.FC<BookingModalProps> = ({
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
       
-      const bookings = await getTurfBookings(turf.id, dateStr);
+      // Get both bookings and blocked slots
+      const { bookings, blockedSlots } = await getUnavailableSlots(turf.id, dateStr);
       
-      if (bookings.length === 0) {
+      if (bookings.length === 0 && blockedSlots.length === 0) {
         setBookedSlots([]);
         return;
       }
       
-      const slots = bookings.map((b) => `${b.startTime}-${b.endTime}`);
+      // Combine booking slots and blocked slots
+      const bookingSlots = bookings.map((b) => `${b.startTime}-${b.endTime}`);
+      const blockedSlotStrings = blockedSlots.map((b) => `${b.startTime}-${b.endTime}`);
+      const allUnavailableSlots = [...bookingSlots, ...blockedSlotStrings];
       
       // Update slots only if different to prevent unnecessary re-renders
       setBookedSlots(prevSlots => {
         const prevSlotsStr = JSON.stringify(prevSlots.sort());
-        const newSlotsStr = JSON.stringify(slots.sort());
+        const newSlotsStr = JSON.stringify(allUnavailableSlots.sort());
         
         if (prevSlotsStr !== newSlotsStr) {
-          return slots;
+          return allUnavailableSlots;
         }
         
         return prevSlots;

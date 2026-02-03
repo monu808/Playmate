@@ -92,6 +92,14 @@ export default function AdminDashboardScreen({ navigation }: any) {
       screen: 'AdminBookings',
     },
     {
+      id: 'lock-slots',
+      title: 'Lock Slots',
+      description: 'Block slots for offline bookings',
+      icon: 'lock-closed',
+      color: '#ec4899',
+      screen: 'AdminManageSlots',
+    },
+    {
       id: 'users',
       title: 'User Management',
       description: 'View and manage users',

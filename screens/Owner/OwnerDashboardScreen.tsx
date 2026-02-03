@@ -100,6 +100,13 @@ export default function OwnerDashboardScreen({ navigation }: any) {
       color: '#3b82f6',
       route: 'OwnerBookings',
     },
+    {
+      id: 'manage-slots',
+      title: 'Lock Slots',
+      icon: 'lock-closed-outline',
+      color: '#8b5cf6',
+      route: 'ManageSlots',
+    },
   ];
 
   return (
