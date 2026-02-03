@@ -55,6 +55,11 @@ const BookingModal: React.FC<BookingModalProps> = ({
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  
+  // Compact processing/success popup state
+  const [showStatusPopup, setShowStatusPopup] = useState(false);
+  const [popupStatus, setPopupStatus] = useState<'processing' | 'success' | 'error'>('processing');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const price = turf?.pricePerHour || turf?.price || 0;
 
@@ -204,18 +209,21 @@ const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   const handlePaymentSuccess = async (paymentData: any) => {
+    // Capture current values before any state changes
+    const currentBreakdown = breakdown;
+    const currentStartTime = startTime!;
+    const currentEndTime = endTime!;
+    const currentDate = format(selectedDate, 'yyyy-MM-dd');
+    
+    // Close Razorpay and show compact processing popup immediately
+    setShowPaymentModal(false);
+    setPopupStatus('processing');
+    setShowStatusPopup(true);
+    
+    console.log('✅ Payment received. Processing...');
+
     try {
-      setShowPaymentModal(false);
-      setLoading(true);
-
-      console.log('✅ Payment received from Razorpay. Verifying with Cloud Function...');
-
-      // ✅ STEP 1: Use React Native Firebase Functions (automatically includes auth token)
       const { functions } = await import('../config/firebase');
-
-      // Calculate payment breakdown
-      const baseTurfAmount = calculateBaseTurfAmount(price, startTime!, endTime!);
-      const breakdown = calculatePaymentBreakdown(baseTurfAmount);
 
       // Prepare booking data
       const bookingData = {
@@ -227,92 +235,70 @@ const BookingModal: React.FC<BookingModalProps> = ({
         turfName: turf.name,
         turfImage: turf.images?.[0] || '',
         turfLocation: turf.location,
-        date: format(selectedDate, 'yyyy-MM-dd'),
-        startTime: startTime!,
-        endTime: endTime!,
-        totalAmount: breakdown.totalAmount,
+        date: currentDate,
+        startTime: currentStartTime,
+        endTime: currentEndTime,
+        totalAmount: currentBreakdown.totalAmount,
         status: 'confirmed' as const,
-        paymentBreakdown: breakdown,
+        paymentBreakdown: currentBreakdown,
         createdAt: new Date(),
       };
 
-      // ✅ STEP 2: Verify payment with React Native Firebase Functions
-      let verificationResult: any;
-      try {
-        const verifyPaymentById = functions.httpsCallable('verifyPaymentById');
-        const response = await verifyPaymentById({
-          razorpay_payment_id: paymentData.razorpay_payment_id,
-          expectedAmount: breakdown.totalAmount,
-        });
+      // Verify payment
+      const verifyPaymentById = functions.httpsCallable('verifyPaymentById');
+      const response = await verifyPaymentById({
+        razorpay_payment_id: paymentData.razorpay_payment_id,
+        expectedAmount: currentBreakdown.totalAmount,
+      });
 
-        verificationResult = response.data;
-        console.log('✅ Payment verified successfully:', verificationResult);
-      } catch (verifyError: any) {
-        console.error('❌ Payment verification failed:', verifyError);
-        setLoading(false);
-        Alert.alert(
-          'Payment Verification Failed',
-          verifyError.message || 'Could not verify your payment. Please contact support with payment ID: ' + paymentData.razorpay_payment_id
-        );
-        return;
-      }
+      const verificationResult = response.data as any;
+      console.log('✅ Payment verified:', verificationResult);
 
-      // ✅ STEP 3: Create booking with verified payment using Cloud Function
+      // Create booking
       const createVerifiedBooking = functions.httpsCallable('createVerifiedBooking');
-      
-      try {
-        const bookingResponse = await createVerifiedBooking({
-          bookingData: {
-            ...bookingData,
-            paymentId: verificationResult.payment.id,
-            paymentDetails: verificationResult.payment,
-          },
-          verifiedPayment: verificationResult,
-        });
+      const bookingResponse = await createVerifiedBooking({
+        bookingData: {
+          ...bookingData,
+          paymentId: verificationResult.payment.id,
+          paymentDetails: verificationResult.payment,
+        },
+        verifiedPayment: verificationResult,
+      });
 
-        const result = bookingResponse.data as any;
+      const result = bookingResponse.data as any;
 
-        if (result.success) {
-          // Optimistic UI update - immediately lock the slot
-          const bookedSlot = `${startTime}-${endTime}`;
-          setBookedSlots(prev => [...prev, bookedSlot]);
-          
-          // Reset form
-          setStartTime(null);
-          setEndTime(null);
-          setAgreedToTerms(false);
-          setLoading(false);
-          
-          // Show success immediately
-          Alert.alert('Success! 🎉', 'Booking confirmed successfully! Payment verified.', [
-            {
-              text: 'OK',
-              onPress: () => {
-                onBookingSuccess();
-              }
-            }
-          ]);
-          
-          // Reload slots in background to sync with server
-          loadBookedSlots();
-        } else {
-          setLoading(false);
-          Alert.alert('Error', 'Failed to create booking. Please contact support.');
-        }
-      } catch (bookingError: any) {
-        console.error('❌ Booking creation failed:', bookingError);
-        setLoading(false);
-        Alert.alert(
-          'Booking Failed',
-          bookingError.message || 'Could not create booking. Your payment was verified. Please contact support.'
-        );
+      if (result.success) {
+        console.log('✅ Booking created successfully');
+        // Lock the slot
+        const bookedSlot = `${currentStartTime}-${currentEndTime}`;
+        setBookedSlots(prev => [...prev, bookedSlot]);
+        // Show success
+        setPopupStatus('success');
+        // Reload slots in background
+        loadBookedSlots();
+      } else {
+        throw new Error('Booking creation failed');
       }
     } catch (error: any) {
-      console.error('❌ Booking error:', error);
-      setLoading(false);
-      Alert.alert('Error', error.message || 'Something went wrong. Please try again.');
+      console.error('❌ Error:', error);
+      setErrorMessage(error.message || 'Something went wrong');
+      setPopupStatus('error');
     }
   };
+
+  // Handle closing the status popup
+  const handleStatusPopupClose = useCallback(() => {
+    if (popupStatus === 'success') {
+      setShowStatusPopup(false);
+      setStartTime(null);
+      setEndTime(null);
+      setAgreedToTerms(false);
+      onBookingSuccess();
+    } else if (popupStatus === 'error') {
+      setShowStatusPopup(false);
+      // Keep form state so user can retry
+    }
+  }, [popupStatus, onBookingSuccess]);
 
   const handlePaymentError = (error: any) => {
     setShowPaymentModal(false);
@@ -338,6 +324,47 @@ const BookingModal: React.FC<BookingModalProps> = ({
     startTime && endTime ? calculateDuration(startTime, endTime) : 0,
     [startTime, endTime]
   );
+
+  // If showing status popup, render a clean fullscreen popup instead of the booking form
+  if (showStatusPopup) {
+    return (
+      <Modal visible={visible} onClose={() => {}} showCloseButton={false}>
+        <View style={styles.statusPopupFullscreen}>
+          <View style={styles.popupContainer}>
+            {popupStatus === 'processing' && (
+              <>
+                <ActivityIndicator size="large" color="#16a34a" />
+                <Text style={styles.popupText}>Processing...</Text>
+              </>
+            )}
+            {popupStatus === 'success' && (
+              <>
+                <View style={styles.popupSuccessIcon}>
+                  <Ionicons name="checkmark" size={32} color="#ffffff" />
+                </View>
+                <Text style={styles.popupTitle}>Booking Confirmed!</Text>
+                <TouchableOpacity style={styles.popupButton} onPress={handleStatusPopupClose}>
+                  <Text style={styles.popupButtonText}>Done</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {popupStatus === 'error' && (
+              <>
+                <View style={styles.popupErrorIcon}>
+                  <Ionicons name="close" size={32} color="#ffffff" />
+                </View>
+                <Text style={styles.popupTitle}>Something went wrong</Text>
+                <Text style={styles.popupErrorText}>{errorMessage}</Text>
+                <TouchableOpacity style={styles.popupRetryButton} onPress={handleStatusPopupClose}>
+                  <Text style={styles.popupButtonText}>Close</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+    );
+  }
 
   return (
     <Modal visible={visible} onClose={onClose} showCloseButton={false}>
@@ -668,6 +695,12 @@ const BookingModal: React.FC<BookingModalProps> = ({
 };
 
 const styles = StyleSheet.create({
+  statusPopupFullscreen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 200,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1036,6 +1069,69 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#92400e',
     flex: 1,
+  },
+  // Compact Status Popup Styles
+  popupContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    minWidth: 220,
+    maxWidth: 280,
+  },
+  popupText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  popupTitle: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  popupSuccessIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#16a34a',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  popupErrorIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#ef4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  popupErrorText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  popupButton: {
+    marginTop: 20,
+    backgroundColor: '#16a34a',
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+    borderRadius: 10,
+  },
+  popupRetryButton: {
+    marginTop: 20,
+    backgroundColor: '#6b7280',
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+    borderRadius: 10,
+  },
+  popupButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

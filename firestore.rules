@@ -28,11 +28,14 @@ service cloud.firestore {
     match /users/{userId} {
       // Users can read their own data and public profiles, admins can read all
       allow read: if isAuthenticated();
-      // Users can create their own profile during sign-up (with any role)
+      // Users can create their own profile during sign-up
+      // Phone auth users may not have email, so we make email check optional
       allow create: if isAuthenticated() && 
                       request.auth.uid == userId &&
                       request.resource.data.uid == userId &&
-                      request.resource.data.email == request.auth.token.email;
+                      (request.auth.token.email == null || 
+                       !('email' in request.resource.data) || 
+                       request.resource.data.email == request.auth.token.email);
       // Users can update their own profile (but cannot change role or uid)
       allow update: if isAuthenticated() && 
                       request.auth.uid == userId &&

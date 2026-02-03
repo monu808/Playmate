@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, getDocs, updateDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { signOut } from '../../lib/firebase/auth';
 import { colors, typography, spacing, borderRadius, shadows } from '../../lib/theme';
@@ -32,11 +31,11 @@ export default function AdminDashboardScreen({ navigation }: any) {
       setLoading(true);
       
       // Fetch turfs
-      const turfsSnapshot = await getDocs(collection(db, 'turfs'));
+      const turfsSnapshot = await db.collection('turfs').get();
       const totalTurfs = turfsSnapshot.size;
       
       // Fetch bookings
-      const bookingsSnapshot = await getDocs(collection(db, 'bookings'));
+      const bookingsSnapshot = await db.collection('bookings').get();
       const totalBookings = bookingsSnapshot.size;
       
       // Calculate platform revenue from bookings (platform fees only)
@@ -50,7 +49,7 @@ export default function AdminDashboardScreen({ navigation }: any) {
       });
       
       // Fetch users
-      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const usersSnapshot = await db.collection('users').get();
       const totalUsers = usersSnapshot.size;
       
       setStats({

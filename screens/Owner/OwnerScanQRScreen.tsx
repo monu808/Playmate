@@ -10,8 +10,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import firestore from '@react-native-firebase/firestore';
+import { LinearGradient } from 'expo-linear-gradient';
 import { QRScanner } from '../../components/QRScanner';
 import { Modal } from '../../components/ui';
 import { colors, spacing, typography, borderRadius, shadows } from '../../lib/theme';
@@ -29,17 +29,16 @@ export default function OwnerScanQRScreen({ navigation }: any) {
   const handleBookingVerified = async (booking: Booking) => {
     try {
       // Verify the booking belongs to one of owner's turfs
-      const turfRef = doc(db, 'turfs', booking.turfId);
-      const turfSnap = await getDoc(turfRef);
+      const turfSnap = await firestore().collection('turfs').doc(booking.turfId).get();
 
-      if (!turfSnap.exists()) {
+      if (!turfSnap.exists) {
         Alert.alert('Error', 'Turf not found.');
         return;
       }
 
       const turf = turfSnap.data();
 
-      if (turf.ownerId !== user?.uid) {
+      if (!turf || turf.ownerId !== user?.uid) {
         Alert.alert(
           'Unauthorized',
           'This booking is not for your turf.',
@@ -65,10 +64,9 @@ export default function OwnerScanQRScreen({ navigation }: any) {
       setProcessing(true);
       
       // Update booking status to completed
-      const bookingRef = doc(db, 'bookings', scannedBooking.id);
-      await updateDoc(bookingRef, {
+      await firestore().collection('bookings').doc(scannedBooking.id).update({
         status: 'completed',
-        checkedInAt: new Date(),
+        checkedInAt: firestore.FieldValue.serverTimestamp(),
       });
 
       Alert.alert(
@@ -93,17 +91,23 @@ export default function OwnerScanQRScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
+    <SafeAreaView style={styles.container} edges={[]}>
+      {/* Curved Green Header */}
+      <LinearGradient
+        colors={[colors.primary[600], colors.primary[700]]}
+        style={styles.header}
+      >
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>QR Scanner</Text>
-          <Text style={styles.headerSubtitle}>Verify customer check-ins</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <View style={styles.headerTextContent}>
+            <Text style={styles.headerTitle}>QR Scanner</Text>
+            <Text style={styles.headerSubtitle}>Verify customer check-ins</Text>
+          </View>
+          <View style={{ width: 24 }} />
         </View>
-        <View style={{ width: 24 }} />
-      </View>
+      </LinearGradient>
 
       <View style={styles.content}>
         <View style={styles.instructionCard}>
@@ -270,26 +274,34 @@ const styles = StyleSheet.create({
     backgroundColor: colors.backgroundSecondary,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.lg,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.gray[200],
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: spacing.xl,
+    gap: spacing.md,
+  },
+  headerTextContent: {
     flex: 1,
-    marginLeft: spacing.md,
   },
   headerTitle: {
     fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.bold,
-    color: colors.textPrimary,
+    color: '#fff',
   },
   headerSubtitle: {
     fontSize: typography.fontSize.sm,
-    color: colors.gray[600],
+    color: 'rgba(255, 255, 255, 0.9)',
     marginTop: spacing.xs,
   },
   content: {

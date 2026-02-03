@@ -58,16 +58,8 @@ const TurfDetailScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const handleBookingSuccess = useCallback(() => {
     setBookingModalVisible(false);
-    Alert.alert(
-      'Success!',
-      'Your booking has been confirmed. Check the Bookings tab for details.',
-      [
-        {
-          text: 'OK',
-          onPress: () => navigation.navigate('Main'),
-        },
-      ]
-    );
+    // Navigate to bookings tab to see the new booking
+    navigation.navigate('Main');
   }, [navigation]);
 
   // Load turf data on mount

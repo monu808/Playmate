@@ -103,7 +103,7 @@ export default function OwnerDashboardScreen({ navigation }: any) {
   ];
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}> 
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -114,7 +114,7 @@ export default function OwnerDashboardScreen({ navigation }: any) {
           />
         }
       >
-        {/* Header */}
+        {/* Header - Now scrolls with content */}
         <LinearGradient
           colors={[colors.primary[600], colors.primary[700]]}
           style={styles.header}
@@ -137,7 +137,6 @@ export default function OwnerDashboardScreen({ navigation }: any) {
             </TouchableOpacity> */}
           </View>
         </LinearGradient>
-
         {/* Revenue Summary Card */}
         <View style={styles.section}>
           <View style={styles.revenueCard}>
@@ -279,10 +278,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingTop: spacing.xl,
     alignItems: 'flex-start',
   },
   greeting: {

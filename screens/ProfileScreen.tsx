@@ -23,8 +23,9 @@ import { SettingsModal } from '../components/SettingsModal';
 import { theme } from '../lib/theme';
 
 const ProfileScreen: React.FC = () => {
-  const { user, userData } = useAuth();
+  const { user, userData, refreshUserData } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [stats, setStats] = useState({
     totalBookings: 0,
@@ -102,7 +103,7 @@ const ProfileScreen: React.FC = () => {
   const handleSaveProfile = async () => {
     if (!user) return;
 
-    setLoading(true);
+    setSaving(true);
     try {
       const result = await updateUserProfile(user.uid, {
         name: displayName,
@@ -110,15 +111,20 @@ const ProfileScreen: React.FC = () => {
       });
 
       if (result.success) {
+        // Refresh user data in context so UI updates
+        await refreshUserData();
         setEditMode(false);
-        Alert.alert('Success', 'Profile updated successfully!');
+        // Use setTimeout to ensure state updates are processed before showing alert
+        setTimeout(() => {
+          Alert.alert('Success', 'Profile updated successfully!');
+        }, 100);
       } else {
         Alert.alert('Error', result.error || 'Failed to update profile');
       }
     } catch (error: any) {
       Alert.alert('Error', error.message);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -303,16 +309,21 @@ const ProfileScreen: React.FC = () => {
                   />
                 </View>
                 <TouchableOpacity
-                  style={styles.saveButton}
+                  style={[styles.saveButton, saving && styles.saveButtonDisabled]}
                   onPress={handleSaveProfile}
+                  disabled={saving}
                 >
-                  <Text style={styles.saveButtonText}>Save Changes</Text>
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                  )}
                 </TouchableOpacity>
               </>
             ) : (
               <>
                 <Text style={styles.userName}>
-                  {userData?.name || user?.displayName || 'User'}
+                  {displayName || userData?.name || userData?.displayName || user?.displayName || 'User'}
                 </Text>
                 <Text style={styles.userBio}>
                   Plays weekly | Open to team invites
@@ -784,6 +795,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     marginTop: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  saveButtonDisabled: {
+    opacity: 0.7,
   },
   saveButtonText: {
     color: '#ffffff',

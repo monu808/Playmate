@@ -334,6 +334,13 @@ export const verifyPhoneOTP = async (
       console.log('✅ User document created');
     } else {
       console.log('✅ Existing user signed in');
+      // Update phone number for existing user if they signed in with phone
+      if (firebaseUser.phoneNumber) {
+        await db.collection('users').doc(firebaseUser.uid).update({
+          phoneNumber: firebaseUser.phoneNumber,
+        });
+        console.log('✅ Phone number updated for existing user');
+      }
     }
     
     return {

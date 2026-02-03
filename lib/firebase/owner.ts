@@ -1,17 +1,5 @@
 // Firebase Owner Functions
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  query,
-  where,
-  orderBy,
-  Timestamp,
-  serverTimestamp,
-} from 'firebase/firestore';
+import { Timestamp } from '@react-native-firebase/firestore';
 import { db } from '../../config/firebase';
 import { Turf, Booking } from '../../types';
 
@@ -23,13 +11,8 @@ import { Turf, Booking } from '../../types';
 export const getOwnerTurfs = async (ownerId: string): Promise<Turf[]> => {
   try {
     console.log('📡 Fetching turfs for owner:', ownerId);
-    // Remove orderBy to avoid index requirement - we'll sort client-side
-    const q = query(
-      collection(db, 'turfs'),
-      where('ownerId', '==', ownerId)
-    );
+    const snapshot = await db.collection('turfs').where('ownerId', '==', ownerId).get();
     
-    const snapshot = await getDocs(q);
     console.log('📊 Found', snapshot.size, 'turfs for owner');
     
     const turfs = snapshot.docs.map(doc => {
@@ -67,10 +50,10 @@ export const createOwnerTurf = async (
       totalReviews: 0,
       rating: 0,
       reviews: 0,
-      createdAt: serverTimestamp(),
+      createdAt: Timestamp.now(),
     };
     
-    const docRef = await addDoc(collection(db, 'turfs'), newTurf);
+    const docRef = await db.collection('turfs').add(newTurf);
     console.log('✅ Turf created with ID:', docRef.id);
     
     return { success: true, id: docRef.id };
@@ -90,10 +73,9 @@ export const updateOwnerTurf = async (
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     // Verify ownership first
-    const turfRef = doc(db, 'turfs', turfId);
-    const turfSnap = await getDoc(turfRef);
+    const turfSnap = await db.collection('turfs').doc(turfId).get();
     
-    if (!turfSnap.exists()) {
+    if (!turfSnap.exists) {
       return { success: false, error: 'Turf not found' };
     }
     
@@ -105,7 +87,7 @@ export const updateOwnerTurf = async (
     // Prevent updating verification status
     const { isVerified, verifiedAt, verifiedBy, ...safeData } = turfData;
     
-    await updateDoc(turfRef, safeData);
+    await db.collection('turfs').doc(turfId).update(safeData);
     console.log('✅ Turf updated:', turfId);
     
     return { success: true };
@@ -123,10 +105,9 @@ export const toggleTurfActive = async (
   ownerId: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
-    const turfRef = doc(db, 'turfs', turfId);
-    const turfSnap = await getDoc(turfRef);
+    const turfSnap = await db.collection('turfs').doc(turfId).get();
     
-    if (!turfSnap.exists()) {
+    if (!turfSnap.exists) {
       return { success: false, error: 'Turf not found' };
     }
     
@@ -140,7 +121,7 @@ export const toggleTurfActive = async (
       return { success: false, error: 'Cannot activate unverified turf' };
     }
     
-    await updateDoc(turfRef, {
+    await db.collection('turfs').doc(turfId).update({
       isActive: !turf.isActive,
     });
     
@@ -175,13 +156,8 @@ export const getOwnerBookings = async (ownerId: string): Promise<Booking[]> => {
     // Process in batches of 10
     for (let i = 0; i < turfIds.length; i += 10) {
       const batch = turfIds.slice(i, i + 10);
-      // Remove orderBy to avoid index requirement - we'll sort client-side
-      const q = query(
-        collection(db, 'bookings'),
-        where('turfId', 'in', batch)
-      );
+      const snapshot = await db.collection('bookings').where('turfId', 'in', batch).get();
       
-      const snapshot = await getDocs(q);
       const batchBookings = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -211,10 +187,9 @@ export const getTurfBookingsByOwner = async (
 ): Promise<Booking[]> => {
   try {
     // Verify ownership
-    const turfRef = doc(db, 'turfs', turfId);
-    const turfSnap = await getDoc(turfRef);
+    const turfSnap = await db.collection('turfs').doc(turfId).get();
     
-    if (!turfSnap.exists()) {
+    if (!turfSnap.exists) {
       throw new Error('Turf not found');
     }
     
@@ -223,13 +198,7 @@ export const getTurfBookingsByOwner = async (
       throw new Error('Unauthorized');
     }
     
-    // Remove orderBy to avoid index requirement - we'll sort client-side
-    const q = query(
-      collection(db, 'bookings'),
-      where('turfId', '==', turfId)
-    );
-    
-    const snapshot = await getDocs(q);
+    const snapshot = await db.collection('bookings').where('turfId', '==', turfId).get();
     const bookings = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),

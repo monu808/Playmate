@@ -15,6 +15,7 @@ import { OnboardingScreen } from '../components/OnboardingScreen';
 import HomeScreen from '../screens/HomeScreen';
 import TurfDetailScreen from '../screens/TurfDetailScreen';
 import BookingsScreen from '../screens/BookingsScreen';
+import BookingDetailScreen from '../screens/BookingDetailScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 
 // Auth Screens
@@ -46,6 +47,7 @@ export type RootStackParamList = {
   Admin: undefined;
   Owner: undefined;
   TurfDetail: { id: string };
+  BookingDetail: { bookingId: string };
   AddTurf: undefined;
   OwnerScanQR: undefined;
 };
@@ -312,6 +314,11 @@ export default function Navigation() {
               component={TurfDetailScreen}
               options={{ headerShown: false }}
             />
+            <Stack.Screen 
+              name="BookingDetail" 
+              component={BookingDetailScreen}
+              options={{ headerShown: false }}
+            />
           </>
         ) : role === 'owner' ? (
           <>
@@ -319,6 +326,11 @@ export default function Navigation() {
             <Stack.Screen 
               name="TurfDetail" 
               component={TurfDetailScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="BookingDetail" 
+              component={BookingDetailScreen}
               options={{ headerShown: false }}
             />
             <Stack.Screen 
@@ -338,6 +350,11 @@ export default function Navigation() {
             <Stack.Screen 
               name="TurfDetail" 
               component={TurfDetailScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="BookingDetail" 
+              component={BookingDetailScreen}
               options={{ headerShown: false }}
             />
           </>
