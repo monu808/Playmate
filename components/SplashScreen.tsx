@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from 'react';
 import {
   View,
@@ -8,14 +7,11 @@ import {
   Easing,
   Text,
   Image,
-  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-// Update this require path to where you put the PlayMate logo inside your RN project, for example:
-// const logo = require('../assets/Playmate_logo-removebg-preview.png');
 const logo = require('../assets/splash-icon.png');
 
 interface SplashScreenProps {
@@ -24,324 +20,306 @@ interface SplashScreenProps {
 }
 
 export function SplashScreen({ onFinish, appName = 'PlayMate' }: SplashScreenProps) {
-  const fadeAnim = useRef(new Animated.Value(0)).current; // For overall opacity
-  const scaleAnim = useRef(new Animated.Value(0.3)).current; // Entrance scale - start smaller
-  const pulseAnim = useRef(new Animated.Value(1)).current; // Continuous pulse
-  const textTranslate = useRef(new Animated.Value(30)).current; // Text slide-up - increased
-  const glowAnim = useRef(new Animated.Value(0)).current; // Glow effect
-  const particleAnim = useRef(new Animated.Value(0)).current; // Particle effect
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.5)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const textOpacity = useRef(new Animated.Value(0)).current;
+  const textTranslate = useRef(new Animated.Value(20)).current;
+  const taglineOpacity = useRef(new Animated.Value(0)).current;
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
 
-  // Keep references to loops so we can stop them on unmount
-  const pulseLoopRef = useRef<any>(null);
+  const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const shimmerLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    // Entrance: fade + pop + text slide + glow
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
+    // Staggered entrance animation
+    Animated.sequence([
+      // Logo appears with bounce
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 5,
+          tension: 80,
+          useNativeDriver: true,
+        }),
+      ]),
+      // App name slides up
+      Animated.parallel([
+        Animated.timing(textOpacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(textTranslate, {
+          toValue: 0,
+          duration: 500,
+          easing: Easing.out(Easing.back(1.2)),
+          useNativeDriver: true,
+        }),
+      ]),
+      // Tagline fades in
+      Animated.timing(taglineOpacity, {
         toValue: 1,
-        duration: 800,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 6,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-      Animated.timing(textTranslate, {
-        toValue: 0,
-        duration: 900,
-        delay: 200,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(glowAnim, {
-        toValue: 1,
-        duration: 1000,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.timing(particleAnim, {
-        toValue: 1,
-        duration: 1200,
-        easing: Easing.out(Easing.quad),
+        duration: 400,
         useNativeDriver: true,
       }),
     ]).start(() => {
-      // After entrance, start gentle pulsing
+      // Start gentle pulse
       pulseLoopRef.current = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.06,
-            duration: 1200,
+            toValue: 1.05,
+            duration: 1500,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
           Animated.timing(pulseAnim, {
             toValue: 1,
-            duration: 1200,
+            duration: 1500,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
         ]),
       );
-
       pulseLoopRef.current.start();
+
+      // Shimmer effect
+      shimmerLoopRef.current = Animated.loop(
+        Animated.timing(shimmerAnim, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      );
+      shimmerLoopRef.current.start();
     });
 
-    // Exit after a graceful hold
+    // Exit after hold time
     const timer = setTimeout(() => {
-      // Stop infinite loops first for predictable exit
-      try {
-        pulseLoopRef.current?.stop?.();
-      } catch (e) {
-        // ignore
-      }
+      pulseLoopRef.current?.stop();
+      shimmerLoopRef.current?.stop();
 
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 0,
-          duration: 700,
-          easing: Easing.bezier(0.4, 0, 0.2, 1),
+          duration: 500,
+          easing: Easing.in(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(scaleAnim, {
-          toValue: 1.2,
-          duration: 700,
-          easing: Easing.in(Easing.back(1.3)),
-          useNativeDriver: true,
-        }),
-        Animated.timing(textTranslate, {
-          toValue: -20,
-          duration: 700,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowAnim, {
-          toValue: 0,
+          toValue: 1.1,
           duration: 500,
           useNativeDriver: true,
         }),
+        Animated.timing(textOpacity, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(taglineOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
       ]).start(() => onFinish && onFinish());
-    }, 3000);
+    }, 2500);
 
     return () => {
       clearTimeout(timer);
-      pulseLoopRef.current?.stop?.();
+      pulseLoopRef.current?.stop();
+      shimmerLoopRef.current?.stop();
     };
-  }, [fadeAnim, scaleAnim, pulseAnim, textTranslate, glowAnim, particleAnim, onFinish]);
+  }, []);
 
-  // Glow opacity interpolation
-  const glowOpacity = glowAnim.interpolate({
+  const logoSize = Math.min(width * 0.35, 150);
+  
+  const shimmerTranslate = shimmerAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 0.4],
+    outputRange: [-width, width],
   });
-
-  // Particle animations
-  const particle1Scale = particleAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1],
-  });
-
-  const particle1Translate = particleAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -60],
-  });
-
-  const particle2Translate = particleAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 60],
-  });
-
-  // Responsive sizing - made logo bigger
-  const logoSize = Math.round(Math.min(width, height) * 0.45);
-  const containerSize = logoSize + 60;
 
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#16a34a', '#15803d', '#0f5132']}
+        colors={['#16a34a', '#15803d', '#166534']}
         style={styles.gradient}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        end={{ x: 0.5, y: 1 }}
       >
-        {/* Animated background particles */}
-        <Animated.View
-          style={[
-            styles.particle,
-            styles.particle1,
-            {
-              opacity: glowOpacity,
-              transform: [
-                { scale: particle1Scale },
-                { translateX: particle1Translate },
-                { translateY: particle1Translate },
-              ],
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.particle,
-            styles.particle2,
-            {
-              opacity: glowOpacity,
-              transform: [
-                { scale: particle1Scale },
-                { translateX: particle2Translate },
-                { translateY: particle1Translate },
-              ],
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.particle,
-            styles.particle3,
-            {
-              opacity: glowOpacity,
-              transform: [
-                { scale: particle1Scale },
-                { translateX: particle1Translate },
-                { translateY: particle2Translate },
-              ],
-            },
-          ]}
-        />
+        {/* Decorative circles */}
+        <View style={[styles.decorCircle, styles.circle1]} />
+        <View style={[styles.decorCircle, styles.circle2]} />
+        <View style={[styles.decorCircle, styles.circle3]} />
 
-        {/* Outer glow ring - made bigger */}
-        <Animated.View
-          style={[
-            styles.glowRing,
-            {
-              width: containerSize + 80,
-              height: containerSize + 80,
-              opacity: glowOpacity,
-              transform: [{ scale: pulseAnim }],
-            },
-          ]}
-        />
-
-        {/* Content container to center logo and text together */}
+        {/* Main content */}
         <View style={styles.contentContainer}>
-          {/* Logo without rotation */}
+          {/* Logo with glow effect */}
           <Animated.View
             style={[
+              styles.logoContainer,
               {
                 opacity: fadeAnim,
                 transform: [{ scale: scaleAnim }, { scale: pulseAnim }],
               },
             ]}
           >
-            <Animated.Image
+            <View style={styles.logoGlow} />
+            <Image
               source={logo}
               resizeMode="contain"
-              style={[
-                {
-                  width: logoSize,
-                  height: logoSize,
-                },
-                styles.logoImage,
-              ]}
+              style={[styles.logoImage, { width: logoSize, height: logoSize }]}
             />
           </Animated.View>
 
+          {/* App name */}
           <Animated.View
             style={[
-              styles.appNameWrap,
+              styles.textContainer,
               {
-                opacity: fadeAnim,
+                opacity: textOpacity,
                 transform: [{ translateY: textTranslate }],
               },
             ]}
           >
             <Text style={styles.appName}>{appName}</Text>
+            
+            {/* Shimmer effect on app name */}
+            <Animated.View
+              style={[
+                styles.shimmer,
+                { transform: [{ translateX: shimmerTranslate }] },
+              ]}
+            />
+          </Animated.View>
+
+          {/* Tagline */}
+          <Animated.View style={{ opacity: taglineOpacity }}>
             <View style={styles.taglineContainer}>
-              <View style={styles.taglineDot} />
+              <View style={styles.taglineLine} />
               <Text style={styles.tagline}>Your match. Your moments.</Text>
-              <View style={styles.taglineDot} />
+              <View style={styles.taglineLine} />
             </View>
           </Animated.View>
         </View>
+
+        {/* Bottom branding */}
+        <Animated.View style={[styles.bottomBrand, { opacity: taglineOpacity }]}>
+          <Text style={styles.bottomText}>⚽ Book • Play • Win</Text>
+        </Animated.View>
       </LinearGradient>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { 
+    flex: 1,
+  },
   gradient: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  particle: {
+  decorCircle: {
     position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
-  particle1: {
-    top: '20%',
-    left: '10%',
+  circle1: {
+    width: 300,
+    height: 300,
+    top: -100,
+    right: -100,
   },
-  particle2: {
-    top: '20%',
-    right: '10%',
+  circle2: {
+    width: 200,
+    height: 200,
+    bottom: 100,
+    left: -80,
   },
-  particle3: {
-    bottom: '25%',
-    left: '15%',
-  },
-  glowRing: {
-    position: 'absolute',
-    borderRadius: 1000,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderWidth: 3,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+  circle3: {
+    width: 150,
+    height: 150,
+    bottom: -50,
+    right: 50,
   },
   contentContainer: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoImage: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
-    elevation: 12,
-  },
-  appNameWrap: {
-    // marginTop: 30,
+  logoContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  logoGlow: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  logoImage: {
+    borderRadius: 24,
+  },
+  textContainer: {
+    alignItems: 'center',
+    overflow: 'hidden',
+    marginBottom: 12,
   },
   appName: {
     color: '#ffffff',
-    fontSize: 28,
+    fontSize: 36,
     fontWeight: '800',
-    letterSpacing: 1,
-    textShadowColor: 'rgba(0,0,0,0.3)',
+    letterSpacing: 2,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    textShadowRadius: 4,
+  },
+  shimmer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    transform: [{ skewX: '-20deg' }],
   },
   taglineContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    // marginTop: 8,
-    gap: 8,
+    marginTop: 4,
   },
-  taglineDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+  taglineLine: {
+    width: 20,
+    height: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 1,
+    marginHorizontal: 12,
   },
   tagline: {
-    color: 'rgba(255,255,255,0.95)',
-    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 14,
     fontWeight: '500',
     letterSpacing: 0.5,
+  },
+  bottomBrand: {
+    position: 'absolute',
+    bottom: 60,
+    alignItems: 'center',
+  },
+  bottomText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 1,
   },
 });

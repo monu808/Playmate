@@ -1,11 +1,15 @@
 ﻿import React, { useState, useCallback, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import * as ExpoSplashScreen from 'expo-splash-screen';
 import Navigation from './navigation';
 import { AuthProvider } from './contexts/AuthContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SplashScreen } from './components/SplashScreen';
 import { ErrorBoundary } from './components/ErrorBoundary'; // ✅ FIX #10: Added Error Boundary
 import { initializeCrashlytics } from './lib/crashlytics'; // ✅ PRODUCTION: Crashlytics
+
+// Prevent the native splash screen from auto-hiding
+ExpoSplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -19,6 +23,15 @@ export default function App() {
         console.log('✅ App initialized with Crashlytics');
       }
     });
+  }, []);
+
+  // Hide native splash when custom splash is ready
+  useEffect(() => {
+    // Small delay to ensure custom splash is rendered
+    const timer = setTimeout(() => {
+      ExpoSplashScreen.hideAsync().catch(() => {});
+    }, 100);
+    return () => clearTimeout(timer);
   }, []);
 
   // PERFORMANCE: Memoize splash finish handler
