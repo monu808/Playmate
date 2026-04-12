@@ -66,6 +66,8 @@ export interface TimeSlot {
   bookingId?: string;
 }
 
+export type PricingPeriod = 'day' | 'night';
+
 export interface Turf {
   id: string;
   name: string;
@@ -73,6 +75,11 @@ export interface Turf {
   sport: TurfSport;
   price: number;                 // Legacy field
   pricePerHour: number;         // New field
+  dayPricePerHour?: number;     // Day pricing (owner/admin configurable)
+  nightPricePerHour?: number;   // Night pricing (owner/admin configurable)
+  dynamicPricingEnabled?: boolean;
+  dynamicBoundaryTime?: string; // Format: "HH:MM", defaults to 18:00
+  manualActivePeriod?: PricingPeriod; // Used when dynamic pricing is off
   images: string[];
   location: Location;
   amenities: string[];

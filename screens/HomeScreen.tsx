@@ -22,7 +22,7 @@ import * as Location from 'expo-location';
 import { getTurfs } from '../lib/firebase/firestore';
 import { LoadingSpinner, Modal } from '../components/ui';
 import { colors, typography, spacing, borderRadius, shadows } from '../lib/theme';
-import { formatCurrency } from '../lib/utils';
+import { formatCurrency, resolveTurfPricing } from '../lib/utils';
 import { Turf, TurfSport } from '../types';
 
 //==============================================================================
@@ -55,6 +55,14 @@ const formatDistance = (km: number): string => {
     return `${Math.round(km * 1000)}m`;
   }
   return `${km.toFixed(1)}km`;
+};
+
+const getCurrentTimeString = (): string => {
+  const now = new Date();
+  return `${now.getHours().toString().padStart(2, '0')}:${now
+    .getMinutes()
+    .toString()
+    .padStart(2, '0')}`;
 };
 
 //==============================================================================
@@ -113,6 +121,7 @@ export default function HomeScreen({ navigation }: any) {
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [selectedMarkerTurf, setSelectedMarkerTurf] = useState<Turf | null>(null);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+  const [currentTimeString, setCurrentTimeString] = useState(getCurrentTimeString());
   const scrollX = useRef(new Animated.Value(0)).current;
   const bannerScrollViewRef = useRef<ScrollView>(null);
   const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
@@ -137,6 +146,15 @@ export default function HomeScreen({ navigation }: any) {
         return nextIndex;
       });
     }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Keep time-based pricing fresh while the screen stays open.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTimeString(getCurrentTimeString());
+    }, 60000);
 
     return () => clearInterval(interval);
   }, []);
@@ -318,6 +336,11 @@ export default function HomeScreen({ navigation }: any) {
 
   // PERFORMANCE: Memoize turf card component
   const TurfCard = memo(({ item }: { item: Turf }) => {
+    const currentPrice = useMemo(
+      () => resolveTurfPricing(item, currentTimeString).pricePerHour,
+      [item, currentTimeString]
+    );
+
     // Calculate distance from user location
     const distance = useMemo(() => {
       if (userLocation && item.location?.lat && item.location?.lng) {
@@ -391,7 +414,7 @@ export default function HomeScreen({ navigation }: any) {
                   {item.sport?.toUpperCase() || 'SPORTS'}
                 </Text>
               </View>
-              <Text style={styles.price}>₹{item.pricePerHour || item.price}/hr</Text>
+              <Text style={styles.price}>{formatCurrency(currentPrice)}/hr</Text>
             </View>
           </View>
         </View>
@@ -574,7 +597,7 @@ export default function HomeScreen({ navigation }: any) {
 
                 const address = turf.location?.address || 'Location not available';
                 const rating = turf.rating?.toFixed(1) || '5.0';
-                const price = turf.pricePerHour || turf.price;
+                const price = resolveTurfPricing(turf, currentTimeString).pricePerHour;
 
                 return (
                   <Marker
@@ -681,7 +704,7 @@ export default function HomeScreen({ navigation }: any) {
                   </Text>
                 </View>
                 <Text style={styles.markerCalloutPrice}>
-                  ₹{selectedMarkerTurf.pricePerHour || selectedMarkerTurf.price}/hr
+                  {formatCurrency(resolveTurfPricing(selectedMarkerTurf, currentTimeString).pricePerHour)}/hr
                 </Text>
               </View>
               

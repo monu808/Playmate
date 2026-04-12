@@ -108,7 +108,16 @@ export default function MyTurfsScreen({ navigation }: any) {
           <Text style={styles.turfName} numberOfLines={1}>
             {item.name}
           </Text>
-          <Text style={styles.turfPrice}>{formatCurrency(item.pricePerHour)}/hr</Text>
+          <View>
+            <Text style={styles.turfPrice}>
+              Day {formatCurrency(item.dayPricePerHour || item.pricePerHour || item.price)} | Night {formatCurrency(item.nightPricePerHour || item.pricePerHour || item.price)}
+            </Text>
+            <Text style={styles.turfMode}>
+              {item.dynamicPricingEnabled
+                ? 'Dynamic'
+                : `Manual ${item.manualActivePeriod === 'night' ? 'night' : 'day'}`}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.turfMeta}>
@@ -172,14 +181,13 @@ export default function MyTurfsScreen({ navigation }: any) {
             </TouchableOpacity>
           )}
 
-          {/* TODO: Implement EditTurf screen */}
-          {/* <TouchableOpacity
+          <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => navigation.navigate('EditTurf', { turfId: item.id })}
+            onPress={() => navigation.navigate('OwnerEditTurfPricing', { turfId: item.id })}
           >
             <Ionicons name="create-outline" size={18} color={colors.primary[600]} />
-            <Text style={styles.actionText}>Edit</Text>
-          </TouchableOpacity> */}
+            <Text style={styles.actionText}>Edit Pricing</Text>
+          </TouchableOpacity>
         </View>
 
         {!item.isVerified && item.rejectionReason && (
@@ -336,6 +344,13 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
     color: colors.primary[600],
+    textAlign: 'right',
+  },
+  turfMode: {
+    marginTop: spacing.xs,
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+    textAlign: 'right',
   },
   turfMeta: {
     gap: spacing.sm,

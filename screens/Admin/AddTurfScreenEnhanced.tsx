@@ -47,7 +47,10 @@ export default function AddTurfScreen({ navigation }: any) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [sport, setSport] = useState('football');
-  const [price, setPrice] = useState('');
+  const [dayPricePerHour, setDayPricePerHour] = useState('');
+  const [nightPricePerHour, setNightPricePerHour] = useState('');
+  const [dynamicPricingEnabled, setDynamicPricingEnabled] = useState(true);
+  const [manualActivePeriod, setManualActivePeriod] = useState<'day' | 'night'>('day');
   const [isActive, setIsActive] = useState(true);
   
   // Location
@@ -200,8 +203,13 @@ export default function AddTurfScreen({ navigation }: any) {
 
   const handleSubmit = async () => {
     // Validation
-    if (!name || !description || !price || !address || !city) {
-      Alert.alert('Error', 'Please fill in all required fields:\n• Name\n• Description\n• Price\n• Address\n• City');
+    if (!name || !description || !dayPricePerHour || !nightPricePerHour || !address || !city) {
+      Alert.alert('Error', 'Please fill in all required fields:\n• Name\n• Description\n• Day Price\n• Night Price\n• Address\n• City');
+      return;
+    }
+
+    if (parseFloat(dayPricePerHour) <= 0 || parseFloat(nightPricePerHour) <= 0) {
+      Alert.alert('Error', 'Day and night price must be greater than zero');
       return;
     }
 
@@ -225,13 +233,26 @@ export default function AddTurfScreen({ navigation }: any) {
       const imageUrls = images.length > 0 ? images : [
         'https://images.unsplash.com/photo-1519861531473-9200262188bf?w=800',
       ];
+
+      const dayPrice = parseFloat(dayPricePerHour);
+      const nightPrice = parseFloat(nightPricePerHour);
+      const effectivePricePerHour = dynamicPricingEnabled
+        ? dayPrice
+        : manualActivePeriod === 'night'
+        ? nightPrice
+        : dayPrice;
       
       const turfData = {
         name: name.trim(),
         description: description.trim(),
         sport,
-        price: parseFloat(price),
-        pricePerHour: parseFloat(price),
+        price: effectivePricePerHour,
+        pricePerHour: effectivePricePerHour,
+        dayPricePerHour: dayPrice,
+        nightPricePerHour: nightPrice,
+        dynamicPricingEnabled,
+        dynamicBoundaryTime: '18:00',
+        manualActivePeriod,
         location: {
           address: address.trim(),
           city: city.trim(),
@@ -330,16 +351,83 @@ export default function AddTurfScreen({ navigation }: any) {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Price Per Hour (₹) *</Text>
+            <Text style={styles.label}>Day Price Per Hour (₹) *</Text>
             <TextInput
               style={styles.input}
-              value={price}
-              onChangeText={setPrice}
+              value={dayPricePerHour}
+              onChangeText={setDayPricePerHour}
+              placeholder="e.g., 700"
+              placeholderTextColor={colors.gray[400]}
+              keyboardType="numeric"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Night Price Per Hour (₹) *</Text>
+            <TextInput
+              style={styles.input}
+              value={nightPricePerHour}
+              onChangeText={setNightPricePerHour}
               placeholder="e.g., 900"
               placeholderTextColor={colors.gray[400]}
               keyboardType="numeric"
             />
           </View>
+
+          <View style={styles.inputGroup}>
+            <View style={styles.switchRow}>
+              <View style={styles.dynamicInfo}>
+                <Text style={styles.label}>Dynamic Day/Night Pricing</Text>
+                <Text style={styles.helpText}>Auto switches at 18:00 based on booking start time</Text>
+              </View>
+              <Switch
+                value={dynamicPricingEnabled}
+                onValueChange={setDynamicPricingEnabled}
+                trackColor={{ false: colors.gray[300], true: colors.primary[200] }}
+                thumbColor={dynamicPricingEnabled ? colors.primary[600] : colors.gray[500]}
+              />
+            </View>
+          </View>
+
+          {!dynamicPricingEnabled && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Manual Active Period</Text>
+              <View style={styles.manualPeriodRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.manualPeriodChip,
+                    manualActivePeriod === 'day' && styles.manualPeriodChipActive,
+                  ]}
+                  onPress={() => setManualActivePeriod('day')}
+                >
+                  <Text
+                    style={[
+                      styles.manualPeriodText,
+                      manualActivePeriod === 'day' && styles.manualPeriodTextActive,
+                    ]}
+                  >
+                    Day Rate Active
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.manualPeriodChip,
+                    manualActivePeriod === 'night' && styles.manualPeriodChipActive,
+                  ]}
+                  onPress={() => setManualActivePeriod('night')}
+                >
+                  <Text
+                    style={[
+                      styles.manualPeriodText,
+                      manualActivePeriod === 'night' && styles.manualPeriodTextActive,
+                    ]}
+                  >
+                    Night Rate Active
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           <View style={styles.inputGroup}>
             <View style={styles.switchRow}>
@@ -650,10 +738,41 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  dynamicInfo: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
   helpText: {
     fontSize: typography.fontSize.xs,
     color: colors.textSecondary,
     marginTop: spacing.xs,
+  },
+  manualPeriodRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  manualPeriodChip: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: colors.gray[300],
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+  },
+  manualPeriodChipActive: {
+    backgroundColor: colors.primary[50],
+    borderColor: colors.primary[600],
+  },
+  manualPeriodText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.medium,
+  },
+  manualPeriodTextActive: {
+    color: colors.primary[700],
+    fontWeight: typography.fontWeight.semibold,
   },
   row: {
     flexDirection: 'row',

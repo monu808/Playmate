@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Switch,
   Platform,
   Image,
   TextInput,
@@ -54,10 +55,14 @@ export default function AddTurfScreen({ navigation }: any) {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    pricePerHour: '',
+    dayPricePerHour: '',
+    nightPricePerHour: '',
     address: '',
     city: 'Sehore',
   });
+
+  const [dynamicPricingEnabled, setDynamicPricingEnabled] = useState(true);
+  const [manualActivePeriod, setManualActivePeriod] = useState<'day' | 'night'>('day');
   
   // Multiple sports selection
   const [selectedSports, setSelectedSports] = useState<TurfSport[]>(['football']);
@@ -138,8 +143,11 @@ export default function AddTurfScreen({ navigation }: any) {
     if (!formData.description.trim()) {
       newErrors.description = 'Description is required';
     }
-    if (!formData.pricePerHour || parseFloat(formData.pricePerHour) <= 0) {
-      newErrors.pricePerHour = 'Valid price is required';
+    if (!formData.dayPricePerHour || parseFloat(formData.dayPricePerHour) <= 0) {
+      newErrors.dayPricePerHour = 'Valid day price is required';
+    }
+    if (!formData.nightPricePerHour || parseFloat(formData.nightPricePerHour) <= 0) {
+      newErrors.nightPricePerHour = 'Valid night price is required';
     }
     if (!formData.address.trim()) {
       newErrors.address = 'Address is required';
@@ -167,13 +175,26 @@ export default function AddTurfScreen({ navigation }: any) {
         ? `Available for: ${selectedSports.join(', ')}` 
         : '';
 
+      const dayPrice = parseFloat(formData.dayPricePerHour);
+      const nightPrice = parseFloat(formData.nightPricePerHour);
+      const effectivePricePerHour = dynamicPricingEnabled
+        ? dayPrice
+        : manualActivePeriod === 'night'
+        ? nightPrice
+        : dayPrice;
+
       const turfData = {
         name: formData.name.trim(),
         description: `${formData.description.trim()}${sportsInfo ? '\n' + sportsInfo : ''}`,
         sport: primarySport,
         sports: selectedSports, // Store all selected sports
-        price: parseFloat(formData.pricePerHour), // Legacy field
-        pricePerHour: parseFloat(formData.pricePerHour),
+        price: effectivePricePerHour, // Legacy field
+        pricePerHour: effectivePricePerHour,
+        dayPricePerHour: dayPrice,
+        nightPricePerHour: nightPrice,
+        dynamicPricingEnabled,
+        dynamicBoundaryTime: '18:00',
+        manualActivePeriod,
         images: images,
         location: {
           lat: selectedLocation.latitude,
@@ -285,14 +306,77 @@ export default function AddTurfScreen({ navigation }: any) {
           />
 
           <Input
-            label="Price per Hour (₹)"
+            label="Day Price per Hour (₹)"
             placeholder="e.g., 500"
-            value={formData.pricePerHour}
-            onChangeText={(text) => updateField('pricePerHour', text)}
-            error={errors.pricePerHour}
+            value={formData.dayPricePerHour}
+            onChangeText={(text) => updateField('dayPricePerHour', text)}
+            error={errors.dayPricePerHour}
             required
             keyboardType="numeric"
           />
+
+          <Input
+            label="Night Price per Hour (₹)"
+            placeholder="e.g., 700"
+            value={formData.nightPricePerHour}
+            onChangeText={(text) => updateField('nightPricePerHour', text)}
+            error={errors.nightPricePerHour}
+            required
+            keyboardType="numeric"
+          />
+
+          <View style={styles.dynamicToggleRow}>
+            <View style={styles.dynamicToggleContent}>
+              <Text style={styles.dynamicToggleLabel}>Dynamic Day/Night Pricing</Text>
+              <Text style={styles.dynamicToggleHint}>Auto switches at 18:00 based on booking start time</Text>
+            </View>
+            <Switch
+              value={dynamicPricingEnabled}
+              onValueChange={setDynamicPricingEnabled}
+              trackColor={{ false: colors.gray[300], true: colors.primary[200] }}
+              thumbColor={dynamicPricingEnabled ? colors.primary[600] : colors.gray[500]}
+            />
+          </View>
+
+          {!dynamicPricingEnabled && (
+            <View style={styles.manualPeriodContainer}>
+              <Text style={styles.manualPeriodTitle}>Manual Active Period</Text>
+              <View style={styles.manualPeriodRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.manualPeriodChip,
+                    manualActivePeriod === 'day' && styles.manualPeriodChipActive,
+                  ]}
+                  onPress={() => setManualActivePeriod('day')}
+                >
+                  <Text
+                    style={[
+                      styles.manualPeriodText,
+                      manualActivePeriod === 'day' && styles.manualPeriodTextActive,
+                    ]}
+                  >
+                    Day Rate Active
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.manualPeriodChip,
+                    manualActivePeriod === 'night' && styles.manualPeriodChipActive,
+                  ]}
+                  onPress={() => setManualActivePeriod('night')}
+                >
+                  <Text
+                    style={[
+                      styles.manualPeriodText,
+                      manualActivePeriod === 'night' && styles.manualPeriodTextActive,
+                    ]}
+                  >
+                    Night Rate Active
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Sport Type - Multiple Selection */}
@@ -521,6 +605,72 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold,
     color: colors.textPrimary,
     marginBottom: spacing.lg,
+  },
+  dynamicToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: colors.gray[300],
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+  },
+  dynamicToggleContent: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  dynamicToggleLabel: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textPrimary,
+  },
+  dynamicToggleHint: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  manualPeriodContainer: {
+    backgroundColor: colors.gray[50],
+    borderWidth: 1,
+    borderColor: colors.gray[200],
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+  },
+  manualPeriodTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  manualPeriodRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  manualPeriodChip: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.gray[300],
+    backgroundColor: '#fff',
+  },
+  manualPeriodChipActive: {
+    borderColor: colors.primary[600],
+    backgroundColor: colors.primary[50],
+  },
+  manualPeriodText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.medium,
+  },
+  manualPeriodTextActive: {
+    color: colors.primary[700],
+    fontWeight: typography.fontWeight.semibold,
   },
   sportGrid: {
     flexDirection: 'row',

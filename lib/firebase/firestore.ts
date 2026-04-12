@@ -6,6 +6,17 @@ import { Turf, Booking, User, BlockedSlot } from '../../types';
 // Type alias for Firestore Timestamp
 type Timestamp = ReturnType<typeof firestore.Timestamp.now>;
 
+const normalizeTurfPricing = (data: any) => {
+  const basePrice = data?.pricePerHour || data?.price || 0;
+  return {
+    dayPricePerHour: data?.dayPricePerHour || basePrice,
+    nightPricePerHour: data?.nightPricePerHour || basePrice,
+    dynamicPricingEnabled: data?.dynamicPricingEnabled ?? false,
+    dynamicBoundaryTime: data?.dynamicBoundaryTime || '18:00',
+    manualActivePeriod: data?.manualActivePeriod === 'night' ? 'night' : 'day',
+  };
+};
+
 // ============ TURFS ============
 
 /**
@@ -32,6 +43,7 @@ export const getTurfs = async (): Promise<Turf[]> => {
       return {
         id: doc.id,
         ...data,
+        ...normalizeTurfPricing(data),
       };
     }) as Turf[];
     
@@ -43,6 +55,32 @@ export const getTurfs = async (): Promise<Turf[]> => {
     console.error('❌ Error message:', error?.message);
     // Return empty array - calling code should handle empty state
     // For network errors, Firebase will show "FirebaseError: Failed to get document because the client is offline"
+    return [];
+  }
+};
+
+/**
+ * Get all turfs for admin (active/inactive/verified/pending)
+ */
+export const getAllTurfsForAdmin = async (): Promise<Turf[]> => {
+  try {
+    const snapshot = await db.collection('turfs').get();
+    const turfs = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        ...normalizeTurfPricing(data),
+      };
+    }) as Turf[];
+
+    return turfs.sort((a, b) => {
+      const aDate = (a as any).createdAt?.toDate?.()?.getTime?.() || 0;
+      const bDate = (b as any).createdAt?.toDate?.()?.getTime?.() || 0;
+      return bDate - aDate;
+    });
+  } catch (error) {
+    console.error('❌ Get all turfs for admin error:', error);
     return [];
   }
 };
@@ -63,6 +101,7 @@ export const getTurfById = async (id: string): Promise<Turf | null> => {
       const turfData = {
         id: docSnap.id,
         ...data,
+        ...normalizeTurfPricing(data),
         createdAt: data?.createdAt?.toDate?.() || new Date(),
       };
       

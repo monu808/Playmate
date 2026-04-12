@@ -20,11 +20,12 @@ import { Modal } from './ui';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import {
+  calculateBookingBaseAmount,
   calculatePaymentBreakdown,
-  calculateBaseTurfAmount,
   formatCurrency,
   formatTime,
   calculateDuration,
+  resolveTurfPricing,
 } from '../lib/utils';
 import { TIME_SLOTS, RAZORPAY_KEY_ID } from '../lib/constants';
 import { createBooking, getUnavailableSlots } from '../lib/firebase/firestore';
@@ -60,8 +61,6 @@ const BookingModal: React.FC<BookingModalProps> = ({
   const [showStatusPopup, setShowStatusPopup] = useState(false);
   const [popupStatus, setPopupStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [errorMessage, setErrorMessage] = useState('');
-
-  const price = turf?.pricePerHour || turf?.price || 0;
 
   // PERFORMANCE: Memoize loadBookedSlots function
   const loadBookedSlots = useCallback(async () => {
@@ -314,10 +313,18 @@ const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   // PERFORMANCE: Memoize payment breakdown calculations
-  const baseTurfAmount = useMemo(() => 
-    startTime && endTime ? calculateBaseTurfAmount(price, startTime, endTime) : 0,
-    [price, startTime, endTime]
+  const pricingSnapshot = useMemo(
+    () => resolveTurfPricing(turf, startTime || '10:00'),
+    [turf, startTime]
   );
+
+  const baseTurfAmount = useMemo(() => {
+    if (!startTime || !endTime) {
+      return 0;
+    }
+
+    return calculateBookingBaseAmount(turf, startTime, endTime).baseTurfAmount;
+  }, [turf, startTime, endTime]);
   
   const breakdown = useMemo(() => 
     calculatePaymentBreakdown(baseTurfAmount),
@@ -583,7 +590,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
               <View style={styles.breakdownCard}>
                 <View style={styles.breakdownRow}>
                   <Text style={styles.breakdownLabel}>
-                    Base Turf Amount ({duration}h × {formatCurrency(price)})
+                    Base Turf Amount ({duration}h x {formatCurrency(pricingSnapshot.pricePerHour)})
                   </Text>
                   <Text style={styles.breakdownValue}>
                     {formatCurrency(breakdown.baseTurfAmount)}

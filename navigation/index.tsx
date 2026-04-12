@@ -34,6 +34,7 @@ import AddTurfScreen from '../screens/Admin/AddTurfScreenEnhanced';
 import ScanQRScreen from '../screens/Admin/ScanQRScreen';
 import PendingTurfsScreen from '../screens/Admin/PendingTurfsScreen';
 import AdminManageSlotsScreen from '../screens/Admin/AdminManageSlotsScreen';
+import EditAdminTurfPricingScreen from '../screens/Admin/EditTurfPricingScreen';
 
 // Owner Screens
 import OwnerDashboardScreen from '../screens/Owner/OwnerDashboardScreen';
@@ -42,6 +43,7 @@ import AddOwnerTurfScreen from '../screens/Owner/AddTurfScreen';
 import OwnerBookingsScreen from '../screens/Owner/OwnerBookingsScreen';
 import OwnerScanQRScreen from '../screens/Owner/OwnerScanQRScreen';
 import ManageSlotsScreen from '../screens/Owner/ManageSlotsScreen';
+import EditOwnerTurfPricingScreen from '../screens/Owner/EditTurfPricingScreen';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -53,6 +55,7 @@ export type RootStackParamList = {
   AddTurf: undefined;
   OwnerScanQR: undefined;
   ManageSlots: undefined;
+  OwnerEditTurfPricing: { turfId: string };
 };
 
 export type AuthStackParamList = {
@@ -78,6 +81,7 @@ export type AdminStackParamList = {
   ScanQR: undefined;
   PendingTurfs: undefined;
   AdminManageSlots: undefined;
+  EditTurfPricing: { turfId: string };
 };
 
 export type OwnerTabParamList = {
@@ -119,6 +123,7 @@ function AdminNavigator() {
       <AdminStack.Screen name="ManageTurfs" component={ManageTurfsScreen} />
       <AdminStack.Screen name="PendingTurfs" component={PendingTurfsScreen} />
       <AdminStack.Screen name="AddTurf" component={AddTurfScreen} />
+      <AdminStack.Screen name="EditTurfPricing" component={EditAdminTurfPricingScreen} />
       <AdminStack.Screen name="AdminBookings" component={AdminBookingsScreen} />
       <AdminStack.Screen name="ManageUsers" component={ManageUsersScreen} />
       <AdminStack.Screen name="Analytics" component={AnalyticsScreen} />
@@ -351,6 +356,11 @@ export default function Navigation() {
             <Stack.Screen 
               name="ManageSlots" 
               component={ManageSlotsScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="OwnerEditTurfPricing" 
+              component={EditOwnerTurfPricingScreen}
               options={{ headerShown: false }}
             />
           </>

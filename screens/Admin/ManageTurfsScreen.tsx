@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { getTurfs, deleteTurf } from '../../lib/firebase/firestore';
+import { getAllTurfsForAdmin, deleteTurf } from '../../lib/firebase/firestore';
 import { LoadingSpinner } from '../../components/ui';
 import { colors, typography, spacing, borderRadius, shadows } from '../../lib/theme';
 import { formatCurrency } from '../../lib/utils';
@@ -28,7 +28,7 @@ export default function ManageTurfsScreen({ navigation }: any) {
   const loadTurfs = async () => {
     try {
       setLoading(true);
-      const allTurfs = await getTurfs();
+      const allTurfs = await getAllTurfsForAdmin();
       setTurfs(allTurfs);
     } catch (error) {
       console.error('Error loading turfs:', error);
@@ -173,7 +173,15 @@ export default function ManageTurfsScreen({ navigation }: any) {
                     <View style={styles.detailRow}>
                       <Ionicons name="cash-outline" size={16} color={colors.gray[600]} />
                       <Text style={styles.detailText}>
-                        {formatCurrency(turf.pricePerHour || turf.price || 0)}/hr
+                        Day {formatCurrency(turf.dayPricePerHour || turf.pricePerHour || turf.price || 0)} | Night {formatCurrency(turf.nightPricePerHour || turf.pricePerHour || turf.price || 0)}
+                      </Text>
+                    </View>
+                    <View style={styles.detailRow}>
+                      <Ionicons name="repeat-outline" size={16} color={colors.gray[600]} />
+                      <Text style={styles.detailText}>
+                        {turf.dynamicPricingEnabled
+                          ? 'Dynamic pricing'
+                          : `Manual ${turf.manualActivePeriod === 'night' ? 'night' : 'day'} pricing`}
                       </Text>
                     </View>
                     <View style={styles.detailRow}>
@@ -194,7 +202,7 @@ export default function ManageTurfsScreen({ navigation }: any) {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.actionButton}
-                      onPress={() => navigation.navigate('EditTurf', { turfId: turf.id })}
+                      onPress={() => navigation.navigate('EditTurfPricing', { turfId: turf.id })}
                     >
                       <Ionicons name="create-outline" size={20} color="#3b82f6" />
                       <Text style={[styles.actionButtonText, { color: '#3b82f6' }]}>

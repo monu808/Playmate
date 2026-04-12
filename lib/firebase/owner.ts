@@ -17,9 +17,15 @@ export const getOwnerTurfs = async (ownerId: string): Promise<Turf[]> => {
     
     const turfs = snapshot.docs.map(doc => {
       const data = doc.data();
+      const basePrice = data?.pricePerHour || data?.price || 0;
       return {
         id: doc.id,
         ...data,
+        dayPricePerHour: data?.dayPricePerHour || basePrice,
+        nightPricePerHour: data?.nightPricePerHour || basePrice,
+        dynamicPricingEnabled: data?.dynamicPricingEnabled ?? false,
+        dynamicBoundaryTime: data?.dynamicBoundaryTime || '18:00',
+        manualActivePeriod: data?.manualActivePeriod === 'night' ? 'night' : 'day',
         createdAt: data.createdAt?.toDate?.() || new Date(),
         verifiedAt: data.verifiedAt?.toDate?.(),
       };

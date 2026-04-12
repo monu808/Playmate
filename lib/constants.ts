@@ -14,6 +14,11 @@ export const GOOGLE_MAPS_API_KEY = 'AIzaSyBSRDlU1pYUR2afuRIUU2H4vWHDRe_n3_o';
 export const PLATFORM_COMMISSION = 25; // Rs 25 per booking
 export const RAZORPAY_FEE_PERCENTAGE = 2.07; // 1.75% + 18% GST
 
+// Turf pricing defaults
+export const DEFAULT_DYNAMIC_BOUNDARY_TIME = '18:00';
+export const DEFAULT_DAY_START_TIME = '06:00';
+export const DEFAULT_MANUAL_ACTIVE_PERIOD = 'day' as const;
+
 // Payout constants
 export const PAYOUT_FEE = {
   UPI: 3, // ₹3 per UPI payout

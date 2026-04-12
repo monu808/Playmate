@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, query, where, getDocs, doc, updateDoc, Timestamp } from 'firebase/firestore';
+import firestore from '@react-native-firebase/firestore';
 import { db } from '../../config/firebase';
 import { Turf } from '../../types';
 import { colors, typography, spacing, borderRadius, shadows } from '../../lib/theme';
@@ -34,16 +34,12 @@ export default function PendingTurfsScreen({ navigation }: any) {
 
   const loadPendingTurfs = async () => {
     try {
-      const q = query(
-        collection(db, 'turfs'),
-        where('isVerified', '==', false)
-      );
-      
-      const snapshot = await getDocs(q);
-      const turfs = snapshot.docs.map(doc => {
-        const data = doc.data();
+      const snapshot = await db.collection('turfs').where('isVerified', '==', false).get();
+      const turfs = snapshot.docs.map(turfDoc => {
+        const data = turfDoc.data();
+        const basePrice = data?.pricePerHour || data?.price || 0;
         return {
-          id: doc.id,
+          id: turfDoc.id,
           ...data,
           createdAt: data.createdAt?.toDate?.() || new Date(),
           // Ensure required fields have default values
@@ -51,6 +47,11 @@ export default function PendingTurfsScreen({ navigation }: any) {
           amenities: data.amenities || [],
           availableSlots: data.availableSlots || [],
           ownerPhone: data.ownerPhone || '',
+          dayPricePerHour: data?.dayPricePerHour || basePrice,
+          nightPricePerHour: data?.nightPricePerHour || basePrice,
+          dynamicPricingEnabled: data?.dynamicPricingEnabled ?? false,
+          dynamicBoundaryTime: data?.dynamicBoundaryTime || '18:00',
+          manualActivePeriod: data?.manualActivePeriod === 'night' ? 'night' : 'day',
         };
       }) as Turf[];
       
@@ -89,11 +90,10 @@ export default function PendingTurfsScreen({ navigation }: any) {
           onPress: async () => {
             setProcessing(true);
             try {
-              const turfRef = doc(db, 'turfs', turf.id);
-              await updateDoc(turfRef, {
+              await db.collection('turfs').doc(turf.id).update({
                 isVerified: true,
                 isActive: true,
-                verifiedAt: Timestamp.now(),
+                verifiedAt: firestore.Timestamp.now(),
                 rejectionReason: null,
               });
               
@@ -127,8 +127,7 @@ export default function PendingTurfsScreen({ navigation }: any) {
 
     setProcessing(true);
     try {
-      const turfRef = doc(db, 'turfs', selectedTurf.id);
-      await updateDoc(turfRef, {
+      await db.collection('turfs').doc(selectedTurf.id).update({
         isVerified: false,
         isActive: false,
         rejectionReason: rejectionReason.trim(),
@@ -214,8 +213,16 @@ export default function PendingTurfsScreen({ navigation }: any) {
 
                 <View style={styles.priceRow}>
                   <Text style={styles.priceLabel}>Price:</Text>
-                  <Text style={styles.price}>₹{turf.pricePerHour}/hour</Text>
+                  <Text style={styles.price}>
+                    ₹{turf.dayPricePerHour || turf.pricePerHour}/day - ₹{turf.nightPricePerHour || turf.pricePerHour}/night
+                  </Text>
                 </View>
+
+                <Text style={styles.pricingModeText}>
+                  {turf.dynamicPricingEnabled
+                    ? `Dynamic pricing (switch at ${turf.dynamicBoundaryTime || '18:00'})`
+                    : `Manual ${turf.manualActivePeriod === 'night' ? 'night' : 'day'} pricing`}
+                </Text>
 
                 {/* Owner Info */}
                 <View style={styles.ownerInfo}>
@@ -468,6 +475,11 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
     color: colors.primary[600],
+  },
+  pricingModeText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
   },
   ownerInfo: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { RootStackParamList } from '../types';
 import { theme } from '../lib/theme';
-import { formatCurrency } from '../lib/utils';
+import { formatCurrency, resolveTurfPricing } from '../lib/utils';
 import { getTurfById } from '../lib/firebase/firestore';
 import { LoadingSpinner } from '../components/ui';
 import BookingModal from '../components/BookingModal';
@@ -25,12 +25,21 @@ const { width } = Dimensions.get('window');
 
 type Props = StackScreenProps<RootStackParamList, 'TurfDetail'>;
 
+const getCurrentTimeString = (): string => {
+  const now = new Date();
+  return `${now.getHours().toString().padStart(2, '0')}:${now
+    .getMinutes()
+    .toString()
+    .padStart(2, '0')}`;
+};
+
 const TurfDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const { id } = route.params;
   const [turf, setTurf] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [bookingModalVisible, setBookingModalVisible] = useState(false);
+  const [currentTimeString, setCurrentTimeString] = useState(getCurrentTimeString());
 
   // PERFORMANCE: Memoize loadTurf function
   const loadTurf = useCallback(async () => {
@@ -67,6 +76,14 @@ const TurfDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     loadTurf();
   }, [loadTurf]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTimeString(getCurrentTimeString());
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -83,7 +100,7 @@ const TurfDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   }
 
-  const price = turf.pricePerHour || turf.price || 0;
+  const startingPrice = resolveTurfPricing(turf, currentTimeString).pricePerHour;
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>
@@ -185,7 +202,7 @@ const TurfDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           {/* Price */}
           <View style={styles.priceSection}>
             <Text style={styles.priceLabel}>Price per hour</Text>
-            <Text style={styles.priceValue}>{formatCurrency(price)}</Text>
+            <Text style={styles.priceValue}>{formatCurrency(startingPrice)}</Text>
           </View>
 
           {/* Description */}
@@ -268,7 +285,7 @@ const TurfDetailScreen: React.FC<Props> = ({ route, navigation }) => {
       <View style={styles.bottomBar}>
         <View style={styles.bottomPriceContainer}>
           <Text style={styles.bottomPriceLabel}>Starting from</Text>
-          <Text style={styles.bottomPriceValue}>{formatCurrency(price)}/hr</Text>
+          <Text style={styles.bottomPriceValue}>{formatCurrency(startingPrice)}/hr</Text>
         </View>
         <TouchableOpacity style={styles.bookButton} onPress={handleBookNow}>
           <Text style={styles.bookButtonText}>Book Now</Text>

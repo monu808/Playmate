@@ -1,7 +1,23 @@
 // Utility Functions
 
-import { PLATFORM_COMMISSION, RAZORPAY_FEE_PERCENTAGE } from './constants';
-import { PaymentBreakdown } from '../types';
+import {
+  DEFAULT_DAY_START_TIME,
+  DEFAULT_DYNAMIC_BOUNDARY_TIME,
+  DEFAULT_MANUAL_ACTIVE_PERIOD,
+  PLATFORM_COMMISSION,
+  RAZORPAY_FEE_PERCENTAGE,
+} from './constants';
+import { PaymentBreakdown, PricingPeriod, Turf } from '../types';
+
+interface ResolvedTurfPricing {
+  appliedPeriod: PricingPeriod;
+  boundaryTime: string;
+  dayPricePerHour: number;
+  nightPricePerHour: number;
+  dynamicPricingEnabled: boolean;
+  manualActivePeriod: PricingPeriod;
+  pricePerHour: number;
+}
 
 /**
  * Format currency as Indian Rupees
@@ -40,6 +56,97 @@ export function calculatePaymentBreakdown(baseTurfAmount: number): PaymentBreakd
     totalAmount: parseFloat(totalAmount.toFixed(2)),
     ownerShare: parseFloat(ownerShare.toFixed(2)),
     platformShare: parseFloat(platformShare.toFixed(2)),
+  };
+}
+
+/**
+ * Parse HH:MM time string into total minutes.
+ */
+export function parseTimeToMinutes(time: string): number {
+  const [rawHours, rawMinutes] = time.split(':');
+  const hours = Number(rawHours);
+  const minutes = Number(rawMinutes);
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return 0;
+  }
+
+  return (hours * 60) + minutes;
+}
+
+/**
+ * Determine if pricing period should be night for a given time.
+ */
+export function isNightPricingTime(
+  time: string,
+  boundaryTime: string = DEFAULT_DYNAMIC_BOUNDARY_TIME,
+  dayStartTime: string = DEFAULT_DAY_START_TIME
+): boolean {
+  const totalMinutes = parseTimeToMinutes(time);
+  const boundaryMinutes = parseTimeToMinutes(boundaryTime);
+  const dayStartMinutes = parseTimeToMinutes(dayStartTime);
+
+  return totalMinutes >= boundaryMinutes || totalMinutes < dayStartMinutes;
+}
+
+/**
+ * Resolve effective hourly price for a turf based on current pricing configuration.
+ */
+export function resolveTurfPricing(
+  turf: Partial<Turf> | null | undefined,
+  startTime: string
+): ResolvedTurfPricing {
+  const basePrice =
+    typeof turf?.pricePerHour === 'number' && turf.pricePerHour > 0
+      ? turf.pricePerHour
+      : typeof turf?.price === 'number' && turf.price > 0
+      ? turf.price
+      : 0;
+
+  const dayPricePerHour =
+    typeof turf?.dayPricePerHour === 'number' && turf.dayPricePerHour > 0
+      ? turf.dayPricePerHour
+      : basePrice;
+
+  const nightPricePerHour =
+    typeof turf?.nightPricePerHour === 'number' && turf.nightPricePerHour > 0
+      ? turf.nightPricePerHour
+      : basePrice;
+
+  const boundaryTime = turf?.dynamicBoundaryTime || DEFAULT_DYNAMIC_BOUNDARY_TIME;
+  const dynamicPricingEnabled = turf?.dynamicPricingEnabled ?? false;
+  const manualActivePeriod: PricingPeriod =
+    turf?.manualActivePeriod === 'night' ? 'night' : DEFAULT_MANUAL_ACTIVE_PERIOD;
+
+  const appliedPeriod: PricingPeriod = dynamicPricingEnabled
+    ? (isNightPricingTime(startTime, boundaryTime) ? 'night' : 'day')
+    : manualActivePeriod;
+
+  const pricePerHour = appliedPeriod === 'night' ? nightPricePerHour : dayPricePerHour;
+
+  return {
+    appliedPeriod,
+    boundaryTime,
+    dayPricePerHour,
+    nightPricePerHour,
+    dynamicPricingEnabled,
+    manualActivePeriod,
+    pricePerHour,
+  };
+}
+
+/**
+ * Resolve booking base amount directly from turf pricing config and selected slot.
+ */
+export function calculateBookingBaseAmount(
+  turf: Partial<Turf> | null | undefined,
+  startTime: string,
+  endTime: string
+): { baseTurfAmount: number; pricing: ResolvedTurfPricing } {
+  const pricing = resolveTurfPricing(turf, startTime);
+  return {
+    baseTurfAmount: calculateBaseTurfAmount(pricing.pricePerHour, startTime, endTime),
+    pricing,
   };
 }
 
