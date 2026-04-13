@@ -12,6 +12,7 @@ export interface RootStackParamList extends Record<string, any> {
 export interface MainTabParamList {
   Home: undefined;
   Bookings: undefined;
+  PlayerFinder: undefined;
   Explore: undefined;
   Profile: undefined;
 }
@@ -36,6 +37,10 @@ export interface User {
   phoneNumber?: string | null;
   photoURL?: string | null;
   displayName?: string | null;
+  spiritPoints?: number;
+  totalSpiritPointsEarned?: number;
+  completedMatchesCount?: number;
+  nextRewardAtCompletedCount?: number;
   // Admin-specific fields
   isAdmin?: boolean;
   adminSince?: Date;
@@ -68,6 +73,17 @@ export interface TimeSlot {
 
 export type PricingPeriod = 'day' | 'night';
 
+export type DiscountSource = 'none' | 'happy_hour' | 'reward_code' | 'spirit_points';
+
+export interface AppliedDiscount {
+  source: DiscountSource;
+  label: string;
+  amount: number;
+  percentage?: number;
+  rewardCode?: string;
+  spiritPointsUsed?: number;
+}
+
 export interface Turf {
   id: string;
   name: string;
@@ -80,6 +96,11 @@ export interface Turf {
   dynamicPricingEnabled?: boolean;
   dynamicBoundaryTime?: string; // Format: "HH:MM", defaults to 18:00
   manualActivePeriod?: PricingPeriod; // Used when dynamic pricing is off
+  happyHourEnabled?: boolean;
+  happyHourDiscountPercent?: number;
+  happyHourStartTime?: string; // Format: "HH:MM", defaults to 11:00
+  happyHourEndTime?: string; // Format: "HH:MM", defaults to 16:00
+  happyHourLeadTimeMinutes?: number; // Defaults to 120
   images: string[];
   location: Location;
   amenities: string[];
@@ -118,7 +139,108 @@ export interface Booking {
   paymentId: string;
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
   paymentBreakdown: PaymentBreakdown;
+  appliedDiscount?: AppliedDiscount;
+  requestedRewardCode?: string;
+  redeemedRewardCode?: string;
+  requestedSpiritPoints?: number;
+  redeemedSpiritPoints?: number;
   createdAt: Date;
+  cancelledAt?: Date;
+  cancelledBy?: 'user' | 'owner' | 'admin';
+  refundDetails?: RefundDetails;
+}
+
+export type PlayerFinderPostStatus = 'open' | 'full' | 'cancelled' | 'completed';
+export type PlayerJoinRequestStatus = 'pending' | 'approved' | 'declined' | 'cancelled';
+
+export interface PlayerParticipant {
+  userId: string;
+  name: string;
+  role: 'host' | 'player';
+  joinedAt: Date;
+}
+
+export interface PlayerFinderPost {
+  id: string;
+  bookingId: string;
+  createdBy: string;
+  createdByName: string;
+  turfId: string;
+  turfName: string;
+  turfImage: string;
+  turfLocation: Location;
+  sport: TurfSport;
+  date: string;
+  startTime: string;
+  endTime: string;
+  requiredPlayers: number;
+  currentPlayers: number;
+  status: PlayerFinderPostStatus;
+  participants: PlayerParticipant[];
+  description?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PlayerFinderBookingSnapshot {
+  bookingId: string;
+  turfId: string;
+  turfName: string;
+  turfImage: string;
+  turfLocation: Location;
+  hostId: string;
+  hostName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface PlayerFinderJoinRequest {
+  id: string;
+  postId: string;
+  bookingId: string;
+  hostId: string;
+  requestedBy: string;
+  requestedByName: string;
+  requestedByPhone?: string | null;
+  requestedByPhotoURL?: string | null;
+  status: PlayerJoinRequestStatus;
+  bookingSnapshot?: PlayerFinderBookingSnapshot;
+  createdAt: Date;
+  respondedAt?: Date;
+}
+
+export interface PlayerFinderChatMessage {
+  id: string;
+  postId: string;
+  senderId: string;
+  senderName: string;
+  message: string;
+  createdAt: Date;
+}
+
+export interface JoinedTeamBooking extends PlayerFinderBookingSnapshot {
+  postId: string;
+  teamStatus: PlayerFinderPostStatus;
+  requestedAt?: Date;
+  approvedAt?: Date;
+}
+
+export type RefundStatus = 'none' | 'pending' | 'processed' | 'failed';
+export type RefundPolicyApplied = 'full_refund' | 'late_cancellation_fee';
+
+export interface RefundDetails {
+  status: RefundStatus;
+  policyApplied: RefundPolicyApplied;
+  minutesBeforeStart: number;
+  refundAmount: number;
+  cancellationCharge: number;
+  ownerCompensation: number;
+  platformRetention: number;
+  refundId?: string;
+  initiatedAt?: Date;
+  processedAt?: Date;
+  failureReason?: string;
 }
 
 // Blocked/Locked slots for offline bookings
@@ -144,21 +266,68 @@ export interface PaymentBreakdown {
   totalAmount: number;           // Final amount user pays
   ownerShare: number;            // Amount for turf owner
   platformShare: number;         // Net platform earnings
+  discountAmount?: number;
+  discountSource?: DiscountSource;
+  discountLabel?: string;
+  originalSubtotal?: number;
+  rewardCode?: string;
+  spiritPointsRedeemed?: number;
+  isHappyHourApplied?: boolean;
 }
 
 export interface Transaction {
   id: string;
   bookingId: string;
+  type: 'payment' | 'refund';
+  userId: string;
+  turfId?: string;
+  turfName?: string;
   paymentId: string;
   amount: number;
+  currency?: string;
   method: 'razorpay' | 'stripe';
-  status: 'pending' | 'success' | 'failed';
+  status: 'pending' | 'success' | 'processed' | 'failed';
   timestamp: Date;
   razorpayOrderId?: string;
   razorpaySignature?: string;
   breakdown: PaymentBreakdown;
   transferId?: string;
   transferStatus?: 'pending' | 'processed' | 'failed';
+  refundAmount?: number;
+  cancellationCharge?: number;
+  ownerCompensation?: number;
+  platformRetention?: number;
+  refundStatus?: RefundStatus;
+  refundId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface RewardCode {
+  id: string;
+  code: string;
+  userId: string;
+  discountPercent: number;
+  maxDiscountAmount?: number;
+  milestoneCompletedCount: number;
+  status: 'active' | 'redeemed' | 'expired';
+  generatedAt: Date;
+  redeemedAt?: Date;
+  redeemedBookingId?: string;
+  expiresAt?: Date;
+}
+
+export interface SpiritPointsLedgerEntry {
+  id: string;
+  userId: string;
+  bookingId?: string;
+  type: 'earned' | 'redeemed' | 'adjusted';
+  points: number;
+  rupeeValue: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  description: string;
+  createdAt: Date;
 }
 
 // Form types

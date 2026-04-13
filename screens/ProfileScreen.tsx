@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { useNavigation } from '@react-navigation/native';
 import auth from '@react-native-firebase/auth';
 import { useAuth } from '../contexts/AuthContext';
 import { getUserBookings } from '../lib/firebase/firestore';
@@ -23,12 +24,13 @@ import { SettingsModal } from '../components/SettingsModal';
 import { theme } from '../lib/theme';
 
 const ProfileScreen: React.FC = () => {
+  const navigation = useNavigation<any>();
   const { user, userData, refreshUserData } = useAuth();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [stats, setStats] = useState({
-    totalBookings: 0,
+    spiritPoints: 0,
     upcomingBookings: 0,
     completedBookings: 0,
   });
@@ -65,7 +67,7 @@ const ProfileScreen: React.FC = () => {
       const today = now.toISOString().split('T')[0];
 
       setStats({
-        totalBookings: bookings.length,
+        spiritPoints: Number(userData?.spiritPoints || 0),
         upcomingBookings: bookings.filter(
           (b) => b.status === 'confirmed' && b.date >= today
         ).length,
@@ -267,8 +269,8 @@ const ProfileScreen: React.FC = () => {
             {/* Stats Row */}
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{stats.totalBookings}</Text>
-                <Text style={styles.statLabel}>Bookings</Text>
+                <Text style={styles.statNumber}>{stats.spiritPoints}</Text>
+                <Text style={styles.statLabel}>Spirit Points</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
@@ -370,12 +372,15 @@ const ProfileScreen: React.FC = () => {
             <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('PaymentHistory')}
+          >
             <View style={styles.menuItemLeft}>
               <View style={styles.menuIconContainer}>
-                <Ionicons name="time-outline" size={22} color="#111827" />
+                <Ionicons name="card-outline" size={22} color="#111827" />
               </View>
-              <Text style={styles.menuItemText}>Booking History</Text>
+              <Text style={styles.menuItemText}>Payment Flow & History</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
           </TouchableOpacity>
@@ -541,8 +546,9 @@ const ProfileScreen: React.FC = () => {
         </Text>
         <Text style={styles.modalSectionTitle}>Refund Policy</Text>
         <Text style={styles.modalText}>
-          Cancellations made 24 hours before the booking time are eligible for a full refund.
-          Cancellations within 24 hours may incur a cancellation fee.
+          Cancellations made 1 hour or more before the booking start time are eligible for a full
+          refund to the original payment source. Cancellations within 1 hour incur a ₹30 charge,
+          where ₹25 goes to the turf owner and ₹5 is retained by Playmate.
         </Text>
       </SettingsModal>
 
@@ -654,7 +660,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   avatarContainer: {
     marginRight: 20,
@@ -729,6 +735,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6b7280',
     fontWeight: '500',
+    textAlign: 'center',
   },
   statDivider: {
     width: 1,

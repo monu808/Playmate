@@ -96,6 +96,18 @@ export default function OwnerBookingsScreen({ navigation }: any) {
     }
   };
 
+  const getOwnerEarning = (booking: Booking) => {
+    if (booking.status === 'cancelled') {
+      return booking.refundDetails?.ownerCompensation || 0;
+    }
+
+    if (booking.status === 'confirmed' || booking.status === 'completed') {
+      return booking.paymentBreakdown?.ownerShare || booking.totalAmount || 0;
+    }
+
+    return 0;
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-IN', { 
@@ -174,9 +186,10 @@ export default function OwnerBookingsScreen({ navigation }: any) {
       <View style={styles.bookingFooter}>
         <View>
           <Text style={styles.amountLabel}>Your Earnings</Text>
-          <Text style={styles.amount}>
-            ₹{item.paymentBreakdown?.ownerShare?.toFixed(2) || item.totalAmount}
-          </Text>
+          <Text style={styles.amount}>₹{getOwnerEarning(item).toFixed(2)}</Text>
+          {item.status === 'cancelled' && getOwnerEarning(item) > 0 && (
+            <Text style={styles.compensationText}>Late-cancel compensation</Text>
+          )}
         </View>
         <View
           style={[
@@ -392,6 +405,12 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
     color: colors.success[600],
+  },
+  compensationText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.warning[500],
+    marginTop: 2,
+    fontWeight: typography.fontWeight.medium,
   },
   statusPill: {
     paddingHorizontal: spacing.md,

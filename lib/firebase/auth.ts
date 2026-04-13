@@ -93,6 +93,10 @@ export const signUp = async (
       phoneNumber: phoneNumber || '',
       role,
       createdAt: new Date(),
+      spiritPoints: 0,
+      totalSpiritPointsEarned: 0,
+      completedMatchesCount: 0,
+      nextRewardAtCompletedCount: 5,
     };
 
     // Add business name for owners
@@ -180,6 +184,10 @@ export const updateUserProfile = async (
         email: currentUser?.email || null,
         role: 'user',
         createdAt: new Date(),
+        spiritPoints: 0,
+        totalSpiritPointsEarned: 0,
+        completedMatchesCount: 0,
+        nextRewardAtCompletedCount: 5,
         ...data, // Merge with the data being updated
       };
       await db.collection('users').doc(uid).set(userData);
@@ -328,6 +336,10 @@ export const verifyPhoneOTP = async (
         name: firebaseUser.displayName || 'User',
         role: 'user',
         createdAt: new Date(),
+        spiritPoints: 0,
+        totalSpiritPointsEarned: 0,
+        completedMatchesCount: 0,
+        nextRewardAtCompletedCount: 5,
       };
       
       await db.collection('users').doc(firebaseUser.uid).set(userData);

@@ -2,122 +2,319 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
     // Helper functions
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
+    function hasCurrentUserDoc() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // Keep this in sync with lib/firebase/admin.ts
+    function isKnownAdminEmail() {
+      return isAuthenticated() &&
+             request.auth.token.email != null &&
+             request.auth.token.email == 'admin@playmate.com';
+    }
+
     function isAdmin() {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuthenticated() &&
+             (
+               request.auth.token.admin == true ||
+               request.auth.token.isAdmin == true ||
+               (hasCurrentUserDoc() &&
+                (
+                  get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+                  (
+                    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true &&
+                    isKnownAdminEmail()
+                  )
+                ))
+             );
     }
-    
-    function isOwner(ownerId) {
-      return isAuthenticated() && request.auth.uid == ownerId;
-    }
-    
+
     function isOwnerRole() {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+      return hasCurrentUserDoc() &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner';
     }
-    
+
+    function isSelf(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isOwnerOfTurf(turfId) {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/turfs/$(turfId)) &&
+             get(/databases/$(database)/documents/turfs/$(turfId)).data.ownerId == request.auth.uid;
+    }
+
+    function playerFinderPostExists(postId) {
+      return exists(/databases/$(database)/documents/playerFinderPosts/$(postId));
+    }
+
+    function playerFinderPostHostMatches(postId, hostId) {
+      return playerFinderPostExists(postId) &&
+             get(/databases/$(database)/documents/playerFinderPosts/$(postId)).data.createdBy == hostId;
+    }
+
+    function playerFinderPostIsOpen(postId) {
+      return playerFinderPostExists(postId) &&
+             get(/databases/$(database)/documents/playerFinderPosts/$(postId)).data.status == 'open';
+    }
+
+    function isApprovedPlayerForPost(postId, userId) {
+      return exists(/databases/$(database)/documents/playerFinderJoinRequests/$(postId + '_' + userId)) &&
+             get(/databases/$(database)/documents/playerFinderJoinRequests/$(postId + '_' + userId)).data.status == 'approved';
+    }
+
+    function canAccessPlayerFinderChat(postId) {
+      return isAuthenticated() &&
+             playerFinderPostExists(postId) &&
+             (
+               get(/databases/$(database)/documents/playerFinderPosts/$(postId)).data.createdBy == request.auth.uid ||
+               isApprovedPlayerForPost(postId, request.auth.uid)
+             );
+    }
+
+    function bookingCoreUnchanged() {
+      return request.resource.data.userId == resource.data.userId &&
+             request.resource.data.turfId == resource.data.turfId &&
+             request.resource.data.date == resource.data.date &&
+             request.resource.data.startTime == resource.data.startTime &&
+             request.resource.data.endTime == resource.data.endTime &&
+             request.resource.data.totalAmount == resource.data.totalAmount &&
+             request.resource.data.paymentId == resource.data.paymentId &&
+             request.resource.data.createdAt == resource.data.createdAt;
+    }
+
     // Users collection
     match /users/{userId} {
-      // Users can read their own data and public profiles, admins can read all
-      allow read: if isAuthenticated();
+      // Users can read own profile, admins can read all
+      allow read: if isAuthenticated() && (isSelf(userId) || isAdmin());
+
       // Users can create their own profile during sign-up
       // Phone auth users may not have email, so we make email check optional
-      allow create: if isAuthenticated() && 
-                      request.auth.uid == userId &&
+      allow create: if isSelf(userId) &&
                       request.resource.data.uid == userId &&
+                      (request.resource.data.role == 'user' || request.resource.data.role == 'owner') &&
                       (request.auth.token.email == null || 
                        !('email' in request.resource.data) || 
-                       request.resource.data.email == request.auth.token.email);
-      // Users can update their own profile (but cannot change role or uid)
-      allow update: if isAuthenticated() && 
-                      request.auth.uid == userId &&
-                      (!('role' in request.resource.data) || request.resource.data.role == resource.data.role) &&
-                      (!('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid);
+                       request.resource.data.email == request.auth.token.email) &&
+                      (!('spiritPoints' in request.resource.data) || request.resource.data.spiritPoints == 0) &&
+                      (!('totalSpiritPointsEarned' in request.resource.data) || request.resource.data.totalSpiritPointsEarned == 0) &&
+                      (!('completedMatchesCount' in request.resource.data) || request.resource.data.completedMatchesCount == 0) &&
+                      (!('nextRewardAtCompletedCount' in request.resource.data) || request.resource.data.nextRewardAtCompletedCount == 5) &&
+                      (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false) &&
+                      !('permissions' in request.resource.data);
+
+      // Admin can update any user. Users can update own profile, but cannot self-escalate privileges.
+      allow update: if isAdmin() ||
+                      (
+                        isSelf(userId) &&
+                        request.resource.data.uid == resource.data.uid &&
+                        request.resource.data.role == resource.data.role &&
+                        request.resource.data.spiritPoints == resource.data.spiritPoints &&
+                        request.resource.data.totalSpiritPointsEarned == resource.data.totalSpiritPointsEarned &&
+                        request.resource.data.completedMatchesCount == resource.data.completedMatchesCount &&
+                        request.resource.data.nextRewardAtCompletedCount == resource.data.nextRewardAtCompletedCount &&
+                        (
+                          (
+                            request.resource.data.isAdmin == resource.data.isAdmin &&
+                            request.resource.data.permissions == resource.data.permissions &&
+                            request.resource.data.adminSince == resource.data.adminSince
+                          ) ||
+                          isKnownAdminEmail()
+                        )
+                      );
+
       // Only admins can delete users
       allow delete: if isAdmin();
     }
-    
+
     // Turfs collection
     match /turfs/{turfId} {
-      // Everyone authenticated can read turfs (for browsing)
-      allow read: if true; // Allow public read access to turfs
-      
-      // Users can create turfs (must set ownerId to their own uid, isVerified=false)
-      allow create: if isAuthenticated() && 
-                      request.resource.data.ownerId == request.auth.uid &&
-                      request.resource.data.isVerified == false;
-      
-      // Owners can update their own turfs (but cannot change isVerified status)
-      allow update: if isAuthenticated() && 
-                      resource.data.ownerId == request.auth.uid &&
-                      request.resource.data.ownerId == resource.data.ownerId &&
-                      request.resource.data.isVerified == resource.data.isVerified;
-      
+      allow read: if true;
+
+      // Owner creates turf in pending state; admin can create any turf doc.
+      allow create: if isAdmin() ||
+                      (
+                        isOwnerRole() &&
+                        request.resource.data.ownerId == request.auth.uid &&
+                        request.resource.data.isVerified == false &&
+                        request.resource.data.isActive == false
+                      );
+
+      // Owners can edit own turf business data but not admin-controlled verification fields.
+      allow update: if isAdmin() ||
+                      (
+                        isAuthenticated() &&
+                        resource.data.ownerId == request.auth.uid &&
+                        request.resource.data.ownerId == resource.data.ownerId &&
+                        request.resource.data.isVerified == resource.data.isVerified &&
+                        request.resource.data.verifiedAt == resource.data.verifiedAt &&
+                        request.resource.data.verifiedBy == resource.data.verifiedBy &&
+                        request.resource.data.rejectionReason == resource.data.rejectionReason &&
+                        (resource.data.isVerified == true || request.resource.data.isActive == false)
+                      );
+
       // Admins can create, update (including verification), or delete any turf
-      allow create, update, delete: if isAdmin();
+      allow delete: if isAdmin();
     }
-    
+
     // Bookings collection - CRITICAL FOR SLOT AVAILABILITY
     match /bookings/{bookingId} {
       // ✅ ANYONE authenticated can read bookings (needed to check slot availability)
       // This is ESSENTIAL for the booking system to work
       allow read: if isAuthenticated();
-      
+
       // Users can only create bookings for themselves
-      allow create: if isAuthenticated() && 
-                      request.auth.uid == request.resource.data.userId;
-      
+      allow create: if isAuthenticated() &&
+                      request.auth.uid == request.resource.data.userId &&
+                      exists(/databases/$(database)/documents/turfs/$(request.resource.data.turfId)) &&
+                      (request.resource.data.status == 'pending' ||
+                       request.resource.data.status == 'confirmed');
+
       // Users can update their own bookings
       // Owners can update bookings for their turfs (check turf ownership)
       // Admins can update any booking
-      allow update: if isAuthenticated() && 
-                      (request.auth.uid == resource.data.userId || 
-                       (exists(/databases/$(database)/documents/turfs/$(resource.data.turfId)) &&
-                        get(/databases/$(database)/documents/turfs/$(resource.data.turfId)).data.ownerId == request.auth.uid) ||
-                       isAdmin());
-      
+      allow update: if isAdmin() ||
+                      (
+                        isOwnerOfTurf(resource.data.turfId) &&
+                        bookingCoreUnchanged() &&
+                        (request.resource.data.status == 'pending' ||
+                         request.resource.data.status == 'confirmed' ||
+                         request.resource.data.status == 'cancelled' ||
+                         request.resource.data.status == 'completed')
+                      ) ||
+                      (
+                        request.auth.uid == resource.data.userId &&
+                        bookingCoreUnchanged() &&
+                        request.resource.data.status == 'cancelled'
+                      );
+
       // Users can delete their own bookings, admins can delete any
-      allow delete: if isAuthenticated() && 
+      allow delete: if isAuthenticated() &&
                       (request.auth.uid == resource.data.userId || isAdmin());
     }
-    
+
     // Blocked Slots collection - for manual slot locking by owners/admins
     match /blockedSlots/{slotId} {
       // Anyone authenticated can read blocked slots (needed to check slot availability)
       allow read: if isAuthenticated();
-      
+
       // Owners can create blocked slots for their own turfs
       // Admins can create blocked slots for any turf
-      allow create: if isAuthenticated() && 
-                      (isAdmin() || 
-                       (isOwnerRole() && 
-                        exists(/databases/$(database)/documents/turfs/$(request.resource.data.turfId)) &&
-                        get(/databases/$(database)/documents/turfs/$(request.resource.data.turfId)).data.ownerId == request.auth.uid));
-      
+      allow create: if isAuthenticated() &&
+                      request.resource.data.blockedBy == request.auth.uid &&
+                      (isAdmin() ||
+                       (isOwnerRole() && isOwnerOfTurf(request.resource.data.turfId)));
+
       // Owners can delete their own blocked slots, admins can delete any
-      allow delete: if isAuthenticated() && 
-                      (isAdmin() || 
-                       (isOwnerRole() && 
-                        exists(/databases/$(database)/documents/turfs/$(resource.data.turfId)) &&
-                        get(/databases/$(database)/documents/turfs/$(resource.data.turfId)).data.ownerId == request.auth.uid));
-      
+      allow delete: if isAuthenticated() &&
+                      (isAdmin() ||
+                       (isOwnerRole() && isOwnerOfTurf(resource.data.turfId)));
+
       // No updates needed - just delete and recreate if needed
       allow update: if false;
+    }
+
+    // Transactions collection (payments/refunds)
+    match /transactions/{transactionId} {
+      // Users can only read their own payment/refund timeline.
+      // Admins can read all transaction data.
+      allow read: if isAuthenticated() &&
+                    (request.auth.uid == resource.data.userId || isAdmin());
+
+      // Transactions are written by backend Cloud Functions only.
+      allow create, update, delete: if false;
+    }
+
+    // Milestone reward codes generated by backend.
+    match /rewardCodes/{rewardCodeId} {
+      allow read: if isAuthenticated() &&
+                    (request.auth.uid == resource.data.userId || isAdmin());
+      allow create, update, delete: if false;
+    }
+
+    // Spirit points ledger generated by backend.
+    match /spiritPointsLedger/{entryId} {
+      allow read: if isAuthenticated() &&
+                    (request.auth.uid == resource.data.userId || isAdmin());
+      allow create, update, delete: if false;
+    }
+
+    // Player Finder posts
+    match /playerFinderPosts/{postId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated() &&
+                      request.auth.uid == request.resource.data.createdBy &&
+                      request.resource.data.currentPlayers == 1 &&
+                      request.resource.data.status == 'open' &&
+                      request.resource.data.requiredPlayers is int &&
+                      request.resource.data.requiredPlayers >= 2 &&
+                      request.resource.data.participants is list;
+
+      allow update: if isAdmin() ||
+                      (
+                        isAuthenticated() &&
+                        request.auth.uid == resource.data.createdBy &&
+                        request.resource.data.createdBy == resource.data.createdBy
+                      );
+
+      allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.createdBy);
+    }
+
+    // Player Finder join requests
+    match /playerFinderJoinRequests/{requestId} {
+      allow read: if isAuthenticated() &&
+                    (
+                      request.auth.uid == resource.data.requestedBy ||
+                      request.auth.uid == resource.data.hostId ||
+                      isAdmin()
+                    );
+
+      allow create: if isAuthenticated() &&
+                      request.auth.uid == request.resource.data.requestedBy &&
+                      request.resource.data.status == 'pending' &&
+                      request.resource.data.postId is string &&
+                      request.resource.data.hostId is string &&
+                      playerFinderPostHostMatches(request.resource.data.postId, request.resource.data.hostId) &&
+                      playerFinderPostIsOpen(request.resource.data.postId) &&
+                      request.auth.uid != request.resource.data.hostId;
+
+      allow update: if isAdmin() ||
+                      (
+                        isAuthenticated() &&
+                        request.auth.uid == resource.data.hostId &&
+                        resource.data.status == 'pending'
+                      );
+
+      allow delete: if false;
+    }
+
+    // Player Finder post chat messages
+    match /playerFinderPostMessages/{messageId} {
+      allow read: if canAccessPlayerFinderChat(resource.data.postId);
+
+      allow create: if isAuthenticated() &&
+                      request.resource.data.postId is string &&
+                      request.resource.data.senderId == request.auth.uid &&
+                      request.resource.data.message is string &&
+                      request.resource.data.message.size() > 0 &&
+                      canAccessPlayerFinderChat(request.resource.data.postId);
+
+      allow update, delete: if false;
     }
     
     // Analytics collection (admin only)
     match /analytics/{document=**} {
       allow read, write: if isAdmin();
     }
-    
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;

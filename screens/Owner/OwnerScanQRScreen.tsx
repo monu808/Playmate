@@ -14,6 +14,7 @@ import firestore from '@react-native-firebase/firestore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { QRScanner } from '../../components/QRScanner';
 import { Modal } from '../../components/ui';
+import { updateBookingStatus } from '../../lib/firebase/firestore';
 import { colors, spacing, typography, borderRadius, shadows } from '../../lib/theme';
 import { formatCurrency, formatTime } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
@@ -62,12 +63,12 @@ export default function OwnerScanQRScreen({ navigation }: any) {
 
     try {
       setProcessing(true);
-      
+
       // Update booking status to completed
-      await firestore().collection('bookings').doc(scannedBooking.id).update({
-        status: 'completed',
-        checkedInAt: firestore.FieldValue.serverTimestamp(),
-      });
+      const updateResult = await updateBookingStatus(scannedBooking.id, 'completed');
+      if (!updateResult.success) {
+        throw new Error(updateResult.error || 'Failed to complete booking');
+      }
 
       Alert.alert(
         'Check-In Successful! ✅',

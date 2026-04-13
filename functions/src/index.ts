@@ -34,6 +34,442 @@ const razorpay = new Razorpay({
   key_secret: RAZORPAY_KEY_SECRET,
 });
 
+const FULL_REFUND_WINDOW_MINUTES = 60;
+const LATE_CANCELLATION_CHARGE_RUPEES = 30;
+const LATE_CANCELLATION_OWNER_SHARE_RUPEES = 25;
+const LATE_CANCELLATION_PLATFORM_SHARE_RUPEES = 5;
+const PLATFORM_COMMISSION_RUPEES = 25;
+const RAZORPAY_FEE_PERCENTAGE = 2.07;
+
+const DEFAULT_DYNAMIC_BOUNDARY_TIME = "18:00";
+const DEFAULT_DAY_START_TIME = "06:00";
+const DEFAULT_MANUAL_ACTIVE_PERIOD = "day";
+
+const DEFAULT_HAPPY_HOUR_ENABLED = true;
+const DEFAULT_HAPPY_HOUR_DISCOUNT_PERCENT = 30;
+const DEFAULT_HAPPY_HOUR_START_TIME = "11:00";
+const DEFAULT_HAPPY_HOUR_END_TIME = "16:00";
+const DEFAULT_HAPPY_HOUR_LEAD_TIME_MINUTES = 120;
+
+const MILESTONE_COMPLETED_MATCHES = 5;
+const MILESTONE_REWARD_DISCOUNT_PERCENT = 50;
+const SPIRIT_POINT_RUPEE_VALUE = 0.5;
+const SPIRIT_POINTS_EARNING_DIVISOR = 20;
+
+type DiscountSource = "none" | "happy_hour" | "reward_code" | "spirit_points";
+
+interface AppliedDiscount {
+  source: DiscountSource;
+  label: string;
+  amount: number;
+  percentage?: number;
+  rewardCode?: string;
+  spiritPointsUsed?: number;
+}
+
+interface PricingBreakdown {
+  baseTurfAmount: number;
+  platformCommission: number;
+  razorpayFee: number;
+  subtotal: number;
+  totalAmount: number;
+  ownerShare: number;
+  platformShare: number;
+  originalSubtotal: number;
+  discountAmount: number;
+  discountSource: DiscountSource;
+  discountLabel?: string;
+  rewardCode?: string;
+  spiritPointsRedeemed?: number;
+  isHappyHourApplied: boolean;
+}
+
+interface ServerBookingPricingQuote {
+  baseTurfAmount: number;
+  durationHours: number;
+  pricePerHour: number;
+  appliedPricingPeriod: "day" | "night";
+  happyHour: {
+    enabled: boolean;
+    discountPercent: number;
+    startTime: string;
+    endTime: string;
+    leadTimeMinutes: number;
+    eligible: boolean;
+  };
+  availableSpiritPoints: number;
+  requestedSpiritPoints: number;
+  rewardCodeValidation: {
+    valid: boolean;
+    message?: string;
+    normalizedCode?: string;
+  };
+  selectedDiscount: AppliedDiscount;
+  breakdown: PricingBreakdown;
+}
+
+interface PricingInput {
+  turfId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  rewardCode?: string;
+  requestedSpiritPoints?: number;
+}
+
+const round2 = (value: number): number => {
+  return parseFloat(value.toFixed(2));
+};
+
+const clamp = (value: number, min: number, max: number): number => {
+  return Math.max(min, Math.min(max, value));
+};
+
+const parseTimeToMinutes = (time: string): number => {
+  const [rawHours, rawMinutes] = String(time || "").split(":");
+  const hours = Number(rawHours);
+  const minutes = Number(rawMinutes);
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return 0;
+  }
+
+  return (hours * 60) + minutes;
+};
+
+const calculateDurationHours = (startTime: string, endTime: string): number => {
+  const startMinutes = parseTimeToMinutes(startTime);
+  let endMinutes = parseTimeToMinutes(endTime);
+
+  if (endMinutes < startMinutes) {
+    endMinutes += 24 * 60;
+  }
+
+  return (endMinutes - startMinutes) / 60;
+};
+
+const isNightPricingTime = (
+  time: string,
+  boundaryTime: string = DEFAULT_DYNAMIC_BOUNDARY_TIME,
+  dayStartTime: string = DEFAULT_DAY_START_TIME
+): boolean => {
+  const totalMinutes = parseTimeToMinutes(time);
+  const boundaryMinutes = parseTimeToMinutes(boundaryTime);
+  const dayStartMinutes = parseTimeToMinutes(dayStartTime);
+
+  return totalMinutes >= boundaryMinutes || totalMinutes < dayStartMinutes;
+};
+
+const isWithinHappyHourWindow = (
+  slotStartTime: string,
+  happyHourStartTime: string,
+  happyHourEndTime: string
+): boolean => {
+  const slotMinutes = parseTimeToMinutes(slotStartTime);
+  const startMinutes = parseTimeToMinutes(happyHourStartTime);
+  const endMinutes = parseTimeToMinutes(happyHourEndTime);
+
+  return slotMinutes >= startMinutes && slotMinutes <= endMinutes;
+};
+
+const normalizeRewardCode = (value: unknown): string => {
+  return String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+};
+
+const calculatePaymentBreakdown = (
+  baseTurfAmount: number,
+  discount: AppliedDiscount
+): PricingBreakdown => {
+  const originalSubtotal = baseTurfAmount + PLATFORM_COMMISSION_RUPEES;
+  const discountAmount = clamp(discount.amount || 0, 0, originalSubtotal);
+  const subtotal = Math.max(0, originalSubtotal - discountAmount);
+  const razorpayFee = subtotal * (RAZORPAY_FEE_PERCENTAGE / 100);
+  const totalAmount = subtotal + razorpayFee;
+  const ownerShare = baseTurfAmount;
+  const basePlatformShare =
+    PLATFORM_COMMISSION_RUPEES - (PLATFORM_COMMISSION_RUPEES * (RAZORPAY_FEE_PERCENTAGE / 100));
+  const platformShare = basePlatformShare - discountAmount;
+
+  return {
+    baseTurfAmount: round2(baseTurfAmount),
+    platformCommission: PLATFORM_COMMISSION_RUPEES,
+    razorpayFee: round2(razorpayFee),
+    subtotal: round2(subtotal),
+    totalAmount: round2(totalAmount),
+    ownerShare: round2(ownerShare),
+    platformShare: round2(platformShare),
+    originalSubtotal: round2(originalSubtotal),
+    discountAmount: round2(discountAmount),
+    discountSource: discount.source,
+    discountLabel: discount.label,
+    rewardCode: discount.rewardCode,
+    spiritPointsRedeemed: discount.spiritPointsUsed,
+    isHappyHourApplied: discount.source === "happy_hour",
+  };
+};
+
+const calculatePointsForCompletedMatch = (baseTurfAmount: number): number => {
+  if (!baseTurfAmount || baseTurfAmount <= 0) {
+    return 0;
+  }
+
+  return Math.max(1, Math.floor(baseTurfAmount / SPIRIT_POINTS_EARNING_DIVISOR));
+};
+
+const getNextMilestone = (completedMatchesCount: number): number => {
+  const safeCompleted = Math.max(0, Math.floor(completedMatchesCount || 0));
+  return (Math.floor(safeCompleted / MILESTONE_COMPLETED_MATCHES) + 1) * MILESTONE_COMPLETED_MATCHES;
+};
+
+const generateMilestoneRewardCode = (userId: string, milestoneCompletedCount: number): string => {
+  const suffix = userId.slice(-4).toUpperCase();
+  return `SPIRIT${milestoneCompletedCount}${suffix}`;
+};
+
+const getServerPricingQuote = async (
+  userId: string,
+  input: PricingInput,
+  now: Date = new Date()
+): Promise<ServerBookingPricingQuote> => {
+  const turfSnap = await db.collection("turfs").doc(input.turfId).get();
+
+  if (!turfSnap.exists) {
+    throw new functions.https.HttpsError("not-found", "Turf not found");
+  }
+
+  const turf = turfSnap.data() || {};
+
+  const basePricePerHour =
+    typeof turf.pricePerHour === "number" && turf.pricePerHour > 0
+      ? turf.pricePerHour
+      : typeof turf.price === "number" && turf.price > 0
+      ? turf.price
+      : 0;
+
+  const dayPricePerHour =
+    typeof turf.dayPricePerHour === "number" && turf.dayPricePerHour > 0
+      ? turf.dayPricePerHour
+      : basePricePerHour;
+
+  const nightPricePerHour =
+    typeof turf.nightPricePerHour === "number" && turf.nightPricePerHour > 0
+      ? turf.nightPricePerHour
+      : basePricePerHour;
+
+  const dynamicBoundaryTime = turf.dynamicBoundaryTime || DEFAULT_DYNAMIC_BOUNDARY_TIME;
+  const dynamicPricingEnabled = turf.dynamicPricingEnabled ?? false;
+  const manualActivePeriod = turf.manualActivePeriod === "night" ? "night" : DEFAULT_MANUAL_ACTIVE_PERIOD;
+
+  const appliedPricingPeriod: "day" | "night" = dynamicPricingEnabled
+    ? (isNightPricingTime(input.startTime, dynamicBoundaryTime) ? "night" : "day")
+    : (manualActivePeriod as "day" | "night");
+
+  const pricePerHour = appliedPricingPeriod === "night" ? nightPricePerHour : dayPricePerHour;
+  const durationHours = calculateDurationHours(input.startTime, input.endTime);
+  const baseTurfAmount = pricePerHour * durationHours;
+
+  const happyHourConfig = {
+    enabled: turf.happyHourEnabled ?? DEFAULT_HAPPY_HOUR_ENABLED,
+    discountPercent:
+      typeof turf.happyHourDiscountPercent === "number"
+        ? turf.happyHourDiscountPercent
+        : DEFAULT_HAPPY_HOUR_DISCOUNT_PERCENT,
+    startTime: turf.happyHourStartTime || DEFAULT_HAPPY_HOUR_START_TIME,
+    endTime: turf.happyHourEndTime || DEFAULT_HAPPY_HOUR_END_TIME,
+    leadTimeMinutes:
+      typeof turf.happyHourLeadTimeMinutes === "number"
+        ? turf.happyHourLeadTimeMinutes
+        : DEFAULT_HAPPY_HOUR_LEAD_TIME_MINUTES,
+  };
+
+  const bookingStartDateTime = parseBookingStartDateTime(input.date, input.startTime);
+  const minutesUntilSlot = Math.floor((bookingStartDateTime.getTime() - now.getTime()) / 60000);
+  const happyHourEligible =
+    happyHourConfig.enabled &&
+    isWithinHappyHourWindow(input.startTime, happyHourConfig.startTime, happyHourConfig.endTime) &&
+    minutesUntilSlot >= 0 &&
+    minutesUntilSlot <= happyHourConfig.leadTimeMinutes;
+
+  const userSnap = await db.collection("users").doc(userId).get();
+  const userData = userSnap.data() || {};
+  const availableSpiritPoints = Math.max(0, Number(userData.spiritPoints || 0));
+  const requestedSpiritPoints = Math.max(0, Math.floor(Number(input.requestedSpiritPoints || 0)));
+
+  const normalizedCode = normalizeRewardCode(input.rewardCode);
+  const rewardCodeValidation: ServerBookingPricingQuote["rewardCodeValidation"] = {
+    valid: false,
+    normalizedCode: normalizedCode || undefined,
+  };
+
+  let rewardCodeDiscountPercent = 0;
+  let rewardCodeApplied: string | undefined;
+
+  if (normalizedCode) {
+    const rewardCodeSnap = await db.collection("rewardCodes").doc(normalizedCode).get();
+
+    if (!rewardCodeSnap.exists) {
+      rewardCodeValidation.message = "Reward code not found";
+    } else {
+      const rewardCodeData = rewardCodeSnap.data() || {};
+      const isOwnerMatch = rewardCodeData.userId === userId;
+      const isStatusActive = rewardCodeData.status === "active";
+      const isExpired =
+        rewardCodeData.expiresAt && rewardCodeData.expiresAt.toDate
+          ? rewardCodeData.expiresAt.toDate().getTime() < now.getTime()
+          : false;
+
+      if (!isOwnerMatch) {
+        rewardCodeValidation.message = "This reward code does not belong to you";
+      } else if (!isStatusActive) {
+        rewardCodeValidation.message = "Reward code is not active";
+      } else if (isExpired) {
+        rewardCodeValidation.message = "Reward code has expired";
+      } else {
+        rewardCodeValidation.valid = true;
+        rewardCodeValidation.message = "Reward code applied";
+        rewardCodeDiscountPercent = Number(rewardCodeData.discountPercent || MILESTONE_REWARD_DISCOUNT_PERCENT);
+        rewardCodeApplied = normalizedCode;
+      }
+    }
+  }
+
+  const candidates: AppliedDiscount[] = [];
+
+  if (happyHourEligible) {
+    candidates.push({
+      source: "happy_hour",
+      label: `Happy Hour ${happyHourConfig.discountPercent}% off`,
+      amount: (baseTurfAmount * happyHourConfig.discountPercent) / 100,
+      percentage: happyHourConfig.discountPercent,
+    });
+  }
+
+  if (rewardCodeValidation.valid && rewardCodeDiscountPercent > 0) {
+    candidates.push({
+      source: "reward_code",
+      label: `${rewardCodeDiscountPercent}% milestone reward`,
+      amount: (baseTurfAmount * rewardCodeDiscountPercent) / 100,
+      percentage: rewardCodeDiscountPercent,
+      rewardCode: rewardCodeApplied,
+    });
+  }
+
+  const spiritPointsToUse = Math.min(availableSpiritPoints, requestedSpiritPoints);
+  if (spiritPointsToUse > 0) {
+    candidates.push({
+      source: "spirit_points",
+      label: `Spirit points (${spiritPointsToUse})`,
+      amount: spiritPointsToUse * SPIRIT_POINT_RUPEE_VALUE,
+      spiritPointsUsed: spiritPointsToUse,
+    });
+  }
+
+  const priority: Record<DiscountSource, number> = {
+    reward_code: 3,
+    happy_hour: 2,
+    spirit_points: 1,
+    none: 0,
+  };
+
+  const selectedDiscount = candidates.sort((a, b) => {
+    if (b.amount === a.amount) {
+      return (priority[b.source] || 0) - (priority[a.source] || 0);
+    }
+
+    return b.amount - a.amount;
+  })[0] || {
+    source: "none" as const,
+    label: "No discount applied",
+    amount: 0,
+  };
+
+  return {
+    baseTurfAmount: round2(baseTurfAmount),
+    durationHours: round2(durationHours),
+    pricePerHour: round2(pricePerHour),
+    appliedPricingPeriod,
+    happyHour: {
+      ...happyHourConfig,
+      eligible: happyHourEligible,
+    },
+    availableSpiritPoints,
+    requestedSpiritPoints,
+    rewardCodeValidation,
+    selectedDiscount,
+    breakdown: calculatePaymentBreakdown(baseTurfAmount, selectedDiscount),
+  };
+};
+
+type RefundStatus = "none" | "pending" | "processed" | "failed";
+
+interface CancellationBreakdown {
+  canCancel: boolean;
+  minutesBeforeStart: number;
+  policyApplied: "full_refund" | "late_cancellation_fee";
+  refundAmount: number;
+  cancellationCharge: number;
+  ownerCompensation: number;
+  platformRetention: number;
+}
+
+const parseBookingStartDateTime = (date: string, startTime: string): Date => {
+  return new Date(`${date}T${startTime}:00`);
+};
+
+const calculateCancellationBreakdown = (
+  totalAmount: number,
+  date: string,
+  startTime: string,
+  now: Date = new Date()
+): CancellationBreakdown => {
+  const bookingStart = parseBookingStartDateTime(date, startTime);
+
+  if (Number.isNaN(bookingStart.getTime())) {
+    return {
+      canCancel: false,
+      minutesBeforeStart: -1,
+      policyApplied: "late_cancellation_fee",
+      refundAmount: 0,
+      cancellationCharge: 0,
+      ownerCompensation: 0,
+      platformRetention: 0,
+    };
+  }
+
+  const minutesBeforeStart = Math.floor((bookingStart.getTime() - now.getTime()) / 60000);
+
+  if (minutesBeforeStart < 0) {
+    return {
+      canCancel: false,
+      minutesBeforeStart,
+      policyApplied: "late_cancellation_fee",
+      refundAmount: 0,
+      cancellationCharge: 0,
+      ownerCompensation: 0,
+      platformRetention: 0,
+    };
+  }
+
+  const isFullRefund = minutesBeforeStart >= FULL_REFUND_WINDOW_MINUTES;
+  const cancellationCharge = isFullRefund ? 0 : Math.min(LATE_CANCELLATION_CHARGE_RUPEES, totalAmount);
+  const ownerCompensation = isFullRefund ? 0 : Math.min(LATE_CANCELLATION_OWNER_SHARE_RUPEES, cancellationCharge);
+  const remainingAfterOwner = Math.max(0, cancellationCharge - ownerCompensation);
+  const platformRetention = isFullRefund
+    ? 0
+    : Math.min(LATE_CANCELLATION_PLATFORM_SHARE_RUPEES, remainingAfterOwner);
+  const refundAmount = Math.max(0, totalAmount - cancellationCharge);
+
+  return {
+    canCancel: true,
+    minutesBeforeStart,
+    policyApplied: isFullRefund ? "full_refund" : "late_cancellation_fee",
+    refundAmount: parseFloat(refundAmount.toFixed(2)),
+    cancellationCharge: parseFloat(cancellationCharge.toFixed(2)),
+    ownerCompensation: parseFloat(ownerCompensation.toFixed(2)),
+    platformRetention: parseFloat(platformRetention.toFixed(2)),
+  };
+};
+
 /**
  * Verify Razorpay Payment Signature
  * 
@@ -181,8 +617,9 @@ export const createVerifiedBooking = functions.https.onCall(async (data, context
         "User must be authenticated to create booking"
       );
     }
+    const authUid = context.auth.uid;
 
-    const {bookingData, verifiedPayment} = data;
+    const {bookingData, verifiedPayment, pricingInput} = data;
 
     // 2. Validate booking data
     if (!bookingData || !verifiedPayment) {
@@ -193,54 +630,240 @@ export const createVerifiedBooking = functions.https.onCall(async (data, context
     }
 
     // 3. Verify user ID matches authenticated user
-    if (bookingData.userId !== context.auth.uid) {
+    if (bookingData.userId !== authUid) {
       throw new functions.https.HttpsError(
         "permission-denied",
         "Cannot create booking for another user"
       );
     }
 
-    // 4. Check slot availability (atomic check)
-    const existingBookingsQuery = await db
-      .collection("bookings")
-      .where("turfId", "==", bookingData.turfId)
-      .where("date", "==", bookingData.date)
-      .where("startTime", "==", bookingData.startTime)
-      .where("endTime", "==", bookingData.endTime)
-      .where("status", "in", ["confirmed", "pending"])
-      .get();
+    const normalizedPricingInput: PricingInput = {
+      turfId: String(pricingInput?.turfId || bookingData?.turfId || "").trim(),
+      date: String(pricingInput?.date || bookingData?.date || "").trim(),
+      startTime: String(pricingInput?.startTime || bookingData?.startTime || "").trim(),
+      endTime: String(pricingInput?.endTime || bookingData?.endTime || "").trim(),
+      rewardCode:
+        typeof pricingInput?.rewardCode === "string"
+          ? pricingInput.rewardCode
+          : typeof bookingData?.requestedRewardCode === "string"
+          ? bookingData.requestedRewardCode
+          : undefined,
+      requestedSpiritPoints: Number(
+        pricingInput?.requestedSpiritPoints ?? bookingData?.requestedSpiritPoints ?? 0
+      ),
+    };
 
-    if (!existingBookingsQuery.empty) {
+    if (
+      !normalizedPricingInput.turfId ||
+      !normalizedPricingInput.date ||
+      !normalizedPricingInput.startTime ||
+      !normalizedPricingInput.endTime
+    ) {
       throw new functions.https.HttpsError(
-        "already-exists",
-        "This slot was just booked by someone else. Please select another time slot."
+        "invalid-argument",
+        "Missing required slot details for booking"
       );
     }
 
-    // 5. Create booking with transaction
-    const bookingRef = db.collection("bookings").doc();
-    const booking = {
-      ...bookingData,
-      id: bookingRef.id,
-      paymentVerified: true,
-      paymentDetails: verifiedPayment,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
+    // 4. Recalculate pricing on the server to prevent client-side tampering.
+    const serverQuote = await getServerPricingQuote(
+      authUid,
+      normalizedPricingInput,
+      new Date()
+    );
 
-    await bookingRef.set(booking);
+    if (normalizedPricingInput.rewardCode && !serverQuote.rewardCodeValidation.valid) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        serverQuote.rewardCodeValidation.message || "Invalid reward code"
+      );
+    }
+
+    const expectedAmountPaise = Math.round(serverQuote.breakdown.totalAmount * 100);
+    const verifiedAmountRupees = Number(
+      verifiedPayment?.payment?.amount ?? verifiedPayment?.amount ?? 0
+    );
+    const verifiedAmountPaise = Math.round(verifiedAmountRupees * 100);
+
+    if (!verifiedAmountPaise || verifiedAmountPaise !== expectedAmountPaise) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Verified payment amount does not match server pricing"
+      );
+    }
+
+    const clientSubmittedAmountPaise = Math.round(Number(bookingData?.totalAmount || 0) * 100);
+    if (clientSubmittedAmountPaise !== expectedAmountPaise) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Client booking amount mismatch"
+      );
+    }
+
+    const resolvedPaymentId =
+      verifiedPayment?.paymentId ||
+      verifiedPayment?.payment?.id ||
+      bookingData?.paymentId ||
+      "";
+
+    const bookingRef = db.collection("bookings").doc();
+    const paymentTransactionRef = db.collection("transactions").doc();
+    const userRef = db.collection("users").doc(authUid);
+    let createdBooking: Record<string, unknown> | null = null;
+
+    await db.runTransaction(async (transaction) => {
+      const existingBookingsQuery = db
+        .collection("bookings")
+        .where("turfId", "==", normalizedPricingInput.turfId)
+        .where("date", "==", normalizedPricingInput.date)
+        .where("startTime", "==", normalizedPricingInput.startTime)
+        .where("endTime", "==", normalizedPricingInput.endTime)
+        .where("status", "in", ["confirmed", "pending"]);
+
+      const existingBookingsSnap = await transaction.get(existingBookingsQuery);
+      if (!existingBookingsSnap.empty) {
+        throw new functions.https.HttpsError(
+          "already-exists",
+          "This slot was just booked by someone else. Please select another time slot."
+        );
+      }
+
+      const nowValue = admin.firestore.FieldValue.serverTimestamp();
+      let redeemedSpiritPoints = 0;
+      let redeemedRewardCode: string | undefined;
+
+      if (serverQuote.selectedDiscount.source === "spirit_points") {
+        const userSnap = await transaction.get(userRef);
+        if (!userSnap.exists) {
+          throw new functions.https.HttpsError("not-found", "User profile not found");
+        }
+
+        const userData = userSnap.data() || {};
+        const currentPoints = Math.max(0, Number(userData.spiritPoints || 0));
+        const pointsToUse = Math.max(
+          0,
+          Math.floor(Number(serverQuote.selectedDiscount.spiritPointsUsed || 0))
+        );
+
+        if (currentPoints < pointsToUse) {
+          throw new functions.https.HttpsError(
+            "failed-precondition",
+            "Insufficient spirit points"
+          );
+        }
+
+        redeemedSpiritPoints = pointsToUse;
+        transaction.update(userRef, {
+          spiritPoints: currentPoints - pointsToUse,
+          updatedAt: nowValue,
+        });
+
+        const redeemLedgerRef = db.collection("spiritPointsLedger").doc(`redeem_${bookingRef.id}`);
+        transaction.set(redeemLedgerRef, {
+          id: redeemLedgerRef.id,
+          userId: authUid,
+          bookingId: bookingRef.id,
+          type: "redeemed",
+          points: pointsToUse,
+          rupeeValue: round2(pointsToUse * SPIRIT_POINT_RUPEE_VALUE),
+          balanceBefore: currentPoints,
+          balanceAfter: currentPoints - pointsToUse,
+          description: "Spirit points redeemed during booking",
+          createdAt: nowValue,
+        });
+      }
+
+      if (serverQuote.selectedDiscount.source === "reward_code") {
+        const normalizedCode = normalizeRewardCode(serverQuote.selectedDiscount.rewardCode);
+        if (!normalizedCode) {
+          throw new functions.https.HttpsError(
+            "failed-precondition",
+            "Missing reward code for redemption"
+          );
+        }
+
+        const rewardCodeRef = db.collection("rewardCodes").doc(normalizedCode);
+        const rewardCodeSnap = await transaction.get(rewardCodeRef);
+
+        if (!rewardCodeSnap.exists) {
+          throw new functions.https.HttpsError("not-found", "Reward code not found");
+        }
+
+        const rewardCodeData = rewardCodeSnap.data() || {};
+        if (rewardCodeData.userId !== authUid || rewardCodeData.status !== "active") {
+          throw new functions.https.HttpsError(
+            "failed-precondition",
+            "Reward code is no longer valid"
+          );
+        }
+
+        redeemedRewardCode = normalizedCode;
+        transaction.update(rewardCodeRef, {
+          status: "redeemed",
+          redeemedAt: nowValue,
+          redeemedBookingId: bookingRef.id,
+        });
+      }
+
+      const booking = {
+        ...bookingData,
+        id: bookingRef.id,
+        turfId: normalizedPricingInput.turfId,
+        date: normalizedPricingInput.date,
+        startTime: normalizedPricingInput.startTime,
+        endTime: normalizedPricingInput.endTime,
+        totalAmount: serverQuote.breakdown.totalAmount,
+        paymentBreakdown: serverQuote.breakdown,
+        appliedDiscount:
+          serverQuote.selectedDiscount.source === "none" ? null : serverQuote.selectedDiscount,
+        requestedRewardCode: normalizeRewardCode(normalizedPricingInput.rewardCode),
+        redeemedRewardCode: redeemedRewardCode || null,
+        requestedSpiritPoints: Math.max(0, Math.floor(normalizedPricingInput.requestedSpiritPoints || 0)),
+        redeemedSpiritPoints,
+        paymentVerified: true,
+        paymentDetails: verifiedPayment,
+        paymentId: resolvedPaymentId,
+        createdAt: nowValue,
+        updatedAt: nowValue,
+      };
+
+      transaction.set(bookingRef, booking);
+      transaction.set(paymentTransactionRef, {
+        id: paymentTransactionRef.id,
+        type: "payment",
+        bookingId: bookingRef.id,
+        userId: authUid,
+        turfId: normalizedPricingInput.turfId,
+        turfName: bookingData.turfName || "",
+        paymentId: resolvedPaymentId,
+        amount: serverQuote.breakdown.totalAmount,
+        currency: "INR",
+        method: "razorpay",
+        status: "success",
+        timestamp: nowValue,
+        createdAt: nowValue,
+        updatedAt: nowValue,
+        breakdown: serverQuote.breakdown,
+        appliedDiscount:
+          serverQuote.selectedDiscount.source === "none" ? null : serverQuote.selectedDiscount,
+      });
+
+      createdBooking = booking;
+    });
 
     functions.logger.info("Booking created successfully", {
       bookingId: bookingRef.id,
-      userId: context.auth.uid,
-      turfId: bookingData.turfId,
-      paymentId: verifiedPayment.paymentId,
+      userId: authUid,
+      turfId: normalizedPricingInput.turfId,
+      paymentId: resolvedPaymentId,
+      discountSource: serverQuote.selectedDiscount.source,
     });
 
     return {
       success: true,
       bookingId: bookingRef.id,
-      booking: booking,
+      booking: createdBooking,
+      pricing: serverQuote,
     };
   } catch (error: any) {
     // Re-throw HttpsError
@@ -349,6 +972,60 @@ export const createRazorpayOrder = functions.https.onCall(async (data, context) 
 });
 
 /**
+ * Calculate booking pricing quote on server.
+ *
+ * This is the source of truth for all booking discounts and final payable amount.
+ */
+export const calculateBookingPricing = functions.https.onCall(async (data, context) => {
+  try {
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "User must be authenticated to calculate booking pricing"
+      );
+    }
+
+    const input: PricingInput = {
+      turfId: String(data?.turfId || "").trim(),
+      date: String(data?.date || "").trim(),
+      startTime: String(data?.startTime || "").trim(),
+      endTime: String(data?.endTime || "").trim(),
+      rewardCode: typeof data?.rewardCode === "string" ? data.rewardCode : undefined,
+      requestedSpiritPoints: Number(data?.requestedSpiritPoints || 0),
+    };
+
+    if (!input.turfId || !input.date || !input.startTime || !input.endTime) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Missing required pricing fields"
+      );
+    }
+
+    const quote = await getServerPricingQuote(context.auth.uid, input, new Date());
+
+    return {
+      ...quote,
+      quoteGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+  } catch (error: any) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+
+    functions.logger.error("Error calculating booking pricing", {
+      error: error.message,
+      stack: error.stack,
+      userId: context.auth?.uid,
+    });
+
+    throw new functions.https.HttpsError(
+      "internal",
+      "Failed to calculate booking pricing"
+    );
+  }
+});
+
+/**
  * Verify Payment by ID (Simplified)
  * 
  * This function verifies a payment by fetching it directly from Razorpay
@@ -449,6 +1126,342 @@ export const verifyPaymentById = functions.https.onCall(async (data, context) =>
 });
 
 /**
+ * Cancel booking with policy-based refund to original payment source.
+ *
+ * Policy:
+ * - Cancel >= 60 mins before start: full refund.
+ * - Cancel < 60 mins before start: ₹30 cancellation charge.
+ *   - ₹25 owner compensation
+ *   - ₹5 platform retention
+ */
+export const cancelBookingWithRefund = functions.https.onCall(async (data, context) => {
+  try {
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "User must be authenticated to cancel booking"
+      );
+    }
+
+    const bookingId = data?.bookingId;
+
+    if (!bookingId || typeof bookingId !== "string") {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Missing bookingId"
+      );
+    }
+
+    const bookingRef = db.collection("bookings").doc(bookingId);
+    const bookingSnap = await bookingRef.get();
+
+    if (!bookingSnap.exists) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Booking not found"
+      );
+    }
+
+    const booking = bookingSnap.data() as any;
+
+    if (booking.userId !== context.auth.uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "You can only cancel your own bookings"
+      );
+    }
+
+    if (booking.status === "cancelled") {
+      return {
+        success: true,
+        alreadyCancelled: true,
+        bookingId,
+        refundDetails: booking.refundDetails || null,
+      };
+    }
+
+    if (booking.status !== "confirmed") {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Only confirmed bookings can be cancelled"
+      );
+    }
+
+    const totalAmount = Number(booking.totalAmount || 0);
+    if (totalAmount <= 0) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Invalid booking amount for refund"
+      );
+    }
+
+    const paymentId =
+      booking.paymentId ||
+      booking.paymentDetails?.payment?.id ||
+      booking.paymentDetails?.id;
+
+    if (!paymentId) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Payment reference not found for this booking"
+      );
+    }
+
+    const breakdown = calculateCancellationBreakdown(
+      totalAmount,
+      String(booking.date || ""),
+      String(booking.startTime || "")
+    );
+
+    if (!breakdown.canCancel) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Booking can no longer be cancelled after start time"
+      );
+    }
+
+    let refundId: string | null = null;
+    let refundStatus: RefundStatus = "none";
+    let refundFailureReason: string | null = null;
+
+    if (breakdown.refundAmount > 0) {
+      if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "Payment gateway is not configured for refunds"
+        );
+      }
+
+      try {
+        const refund = await razorpay.payments.refund(paymentId, {
+          amount: Math.round(breakdown.refundAmount * 100),
+          speed: "normal",
+          notes: {
+            bookingId,
+            userId: context.auth.uid,
+            policyApplied: breakdown.policyApplied,
+          },
+        });
+
+        refundId = refund.id;
+        refundStatus = refund.status === "processed" ? "processed" : "pending";
+      } catch (refundError: any) {
+        refundStatus = "failed";
+        refundFailureReason = refundError?.message || "Refund initiation failed";
+
+        functions.logger.error("Refund initiation failed", {
+          bookingId,
+          paymentId,
+          userId: context.auth.uid,
+          error: refundError?.message,
+        });
+      }
+    } else {
+      refundStatus = "processed";
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const refundDetails = {
+      status: refundStatus,
+      policyApplied: breakdown.policyApplied,
+      minutesBeforeStart: breakdown.minutesBeforeStart,
+      refundAmount: breakdown.refundAmount,
+      cancellationCharge: breakdown.cancellationCharge,
+      ownerCompensation: breakdown.ownerCompensation,
+      platformRetention: breakdown.platformRetention,
+      refundId,
+      initiatedAt: now,
+      processedAt: refundStatus === "processed" ? now : null,
+      failureReason: refundFailureReason,
+    };
+
+    const transactionRef = db.collection("transactions").doc();
+    const batch = db.batch();
+
+    batch.update(bookingRef, {
+      status: "cancelled",
+      cancelledBy: "user",
+      cancelledAt: now,
+      updatedAt: now,
+      refundDetails,
+    });
+
+    batch.set(transactionRef, {
+      id: transactionRef.id,
+      type: "refund",
+      bookingId,
+      userId: context.auth.uid,
+      turfId: booking.turfId || "",
+      turfName: booking.turfName || "",
+      paymentId,
+      amount: breakdown.refundAmount,
+      refundAmount: breakdown.refundAmount,
+      cancellationCharge: breakdown.cancellationCharge,
+      ownerCompensation: breakdown.ownerCompensation,
+      platformRetention: breakdown.platformRetention,
+      refundStatus,
+      refundId,
+      currency: "INR",
+      method: "razorpay",
+      status: refundStatus === "processed" ? "processed" : refundStatus,
+      breakdown: booking.paymentBreakdown || null,
+      timestamp: now,
+      createdAt: now,
+      updatedAt: now,
+      metadata: {
+        policyApplied: breakdown.policyApplied,
+        minutesBeforeStart: breakdown.minutesBeforeStart,
+      },
+    });
+
+    await batch.commit();
+
+    functions.logger.info("Booking cancelled with refund policy", {
+      bookingId,
+      userId: context.auth.uid,
+      paymentId,
+      refundId,
+      refundStatus,
+      refundAmount: breakdown.refundAmount,
+      cancellationCharge: breakdown.cancellationCharge,
+      policyApplied: breakdown.policyApplied,
+    });
+
+    return {
+      success: true,
+      bookingId,
+      refundDetails: {
+        ...breakdown,
+        status: refundStatus,
+        refundId,
+        failureReason: refundFailureReason,
+      },
+    };
+  } catch (error: any) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+
+    functions.logger.error("Unexpected error in cancelBookingWithRefund", {
+      error: error.message,
+      stack: error.stack,
+    });
+
+    throw new functions.https.HttpsError(
+      "internal",
+      "An unexpected error occurred while cancelling booking"
+    );
+  }
+});
+
+/**
+ * Award spirit points and milestone reward code when a booking is completed.
+ *
+ * This trigger centralizes credit logic across all completion paths
+ * (admin panel, owner scan QR, admin scan QR, etc.).
+ */
+export const onBookingCompletedAwardBenefits = functions.firestore
+  .document("bookings/{bookingId}")
+  .onUpdate(async (change, context) => {
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+
+    if (before.status === "completed" || after.status !== "completed") {
+      return;
+    }
+
+    const bookingId = context.params.bookingId as string;
+    const userId = String(after.userId || "").trim();
+
+    if (!userId) {
+      functions.logger.warn("Skipping rewards for completed booking without userId", {
+        bookingId,
+      });
+      return;
+    }
+
+    const baseTurfAmount = Number(after?.paymentBreakdown?.baseTurfAmount || after?.totalAmount || 0);
+    const pointsEarned = calculatePointsForCompletedMatch(baseTurfAmount);
+
+    const userRef = db.collection("users").doc(userId);
+    const earningLedgerRef = db.collection("spiritPointsLedger").doc(`complete_${bookingId}`);
+    let generatedRewardCode: string | null = null;
+
+    await db.runTransaction(async (transaction) => {
+      const [ledgerSnap, userSnap] = await Promise.all([
+        transaction.get(earningLedgerRef),
+        transaction.get(userRef),
+      ]);
+
+      // Idempotency guard for retried trigger events.
+      if (ledgerSnap.exists) {
+        return;
+      }
+
+      const userData = userSnap.data() || {};
+      const currentSpiritPoints = Math.max(0, Number(userData.spiritPoints || 0));
+      const currentCompletedMatches = Math.max(0, Number(userData.completedMatchesCount || 0));
+      const currentTotalSpiritPointsEarned = Math.max(0, Number(userData.totalSpiritPointsEarned || 0));
+
+      const newSpiritPoints = currentSpiritPoints + pointsEarned;
+      const newCompletedMatches = currentCompletedMatches + 1;
+      const newTotalSpiritPointsEarned = currentTotalSpiritPointsEarned + pointsEarned;
+      const nextRewardAtCompletedCount = getNextMilestone(newCompletedMatches);
+
+      const nowValue = admin.firestore.FieldValue.serverTimestamp();
+
+      transaction.set(userRef, {
+        spiritPoints: newSpiritPoints,
+        completedMatchesCount: newCompletedMatches,
+        totalSpiritPointsEarned: newTotalSpiritPointsEarned,
+        nextRewardAtCompletedCount,
+        updatedAt: nowValue,
+      }, {merge: true});
+
+      transaction.set(earningLedgerRef, {
+        id: earningLedgerRef.id,
+        userId,
+        bookingId,
+        type: "earned",
+        points: pointsEarned,
+        rupeeValue: round2(pointsEarned * SPIRIT_POINT_RUPEE_VALUE),
+        balanceBefore: currentSpiritPoints,
+        balanceAfter: newSpiritPoints,
+        description: "Spirit points earned from completed match",
+        createdAt: nowValue,
+      });
+
+      if (newCompletedMatches % MILESTONE_COMPLETED_MATCHES === 0) {
+        const rewardCode = generateMilestoneRewardCode(userId, newCompletedMatches);
+        const rewardCodeRef = db.collection("rewardCodes").doc(rewardCode);
+        const rewardCodeSnap = await transaction.get(rewardCodeRef);
+
+        if (!rewardCodeSnap.exists) {
+          transaction.set(rewardCodeRef, {
+            id: rewardCode,
+            code: rewardCode,
+            userId,
+            discountPercent: MILESTONE_REWARD_DISCOUNT_PERCENT,
+            milestoneCompletedCount: newCompletedMatches,
+            status: "active",
+            generatedAt: nowValue,
+            createdAt: nowValue,
+            updatedAt: nowValue,
+          });
+          generatedRewardCode = rewardCode;
+        }
+      }
+    });
+
+    functions.logger.info("Booking completion rewards processed", {
+      bookingId,
+      userId,
+      pointsEarned,
+      generatedRewardCode,
+    });
+  });
+
+/**
  * Health check endpoint
  */
 export const healthCheck = functions.https.onRequest((req, res) => {
@@ -459,6 +1472,9 @@ export const healthCheck = functions.https.onRequest((req, res) => {
       verifyPayment: "active",
       createVerifiedBooking: "active",
       createRazorpayOrder: "active",
+      calculateBookingPricing: "active",
+      cancelBookingWithRefund: "active",
+      onBookingCompletedAwardBenefits: "active",
     },
   });
 });

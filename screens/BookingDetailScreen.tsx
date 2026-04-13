@@ -18,8 +18,8 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { db } from '../config/firebase';
 import { LoadingSpinner, Modal } from '../components/ui';
 import { BookingQRCode } from '../components/BookingQRCode';
-import { cancelBooking } from '../lib/firebase/firestore';
-import { formatCurrency, getStatusColor } from '../lib/utils';
+import { cancelBookingWithRefund } from '../lib/firebase/firestore';
+import { calculateCancellationBreakdown, formatCurrency, getStatusColor } from '../lib/utils';
 import { Booking } from '../types';
 import { colors, spacing, borderRadius, shadows } from '../lib/theme';
 
@@ -71,9 +71,24 @@ export default function BookingDetailScreen() {
   const handleCancelBooking = () => {
     if (!booking) return;
 
+    const cancellationPreview = calculateCancellationBreakdown(
+      booking.totalAmount,
+      booking.date,
+      booking.startTime
+    );
+
+    if (!cancellationPreview.canCancel) {
+      Alert.alert('Cannot cancel', 'This booking has already started and cannot be cancelled.');
+      return;
+    }
+
+    const refundMessage = cancellationPreview.isFullRefund
+      ? `You will receive a full refund of ${formatCurrency(cancellationPreview.refundAmount)}.`
+      : `Refund amount: ${formatCurrency(cancellationPreview.refundAmount)}\nCancellation charge: ${formatCurrency(cancellationPreview.cancellationCharge)}\n${formatCurrency(cancellationPreview.ownerCompensation)} goes to the owner and ${formatCurrency(cancellationPreview.platformRetention)} is retained by platform.`;
+
     Alert.alert(
       'Cancel Booking',
-      'Are you sure you want to cancel this booking? This action cannot be undone.',
+      `${refundMessage}\n\nThis action cannot be undone.`,
       [
         { text: 'No', style: 'cancel' },
         {
@@ -82,10 +97,23 @@ export default function BookingDetailScreen() {
           onPress: async () => {
             try {
               setCancelling(true);
-              const result = await cancelBooking(booking.id);
+              const result = await cancelBookingWithRefund(booking.id);
               
               if (result.success) {
-                Alert.alert('Success', 'Booking cancelled successfully');
+                const status = result.refundDetails?.status;
+                const refundedAmount = result.refundDetails?.refundAmount ?? cancellationPreview.refundAmount;
+                const statusText = status === 'processed'
+                  ? 'Refund processed successfully.'
+                  : status === 'pending'
+                  ? 'Refund is initiated and currently pending.'
+                  : status === 'failed'
+                  ? 'Booking cancelled, but refund initiation failed. Please contact support.'
+                  : 'Booking cancelled successfully.';
+
+                Alert.alert(
+                  'Booking Cancelled',
+                  `${statusText}\nRefund amount: ${formatCurrency(refundedAmount)}`
+                );
                 navigation.goBack();
               } else {
                 Alert.alert('Error', result.error || 'Failed to cancel booking');
@@ -164,21 +192,11 @@ export default function BookingDetailScreen() {
     if (!booking) return false;
     if (booking.status !== 'confirmed') return false;
 
-    const now = new Date();
-    const bookingDate = new Date(booking.date);
-    const today = format(now, 'yyyy-MM-dd');
-    const bookingDateStr = booking.date;
-
-    // Can cancel if booking is in the future
-    if (bookingDateStr > today) return true;
-    
-    // If booking is today, check if time hasn't started
-    if (bookingDateStr === today) {
-      const currentTime = format(now, 'HH:mm');
-      return currentTime < booking.startTime;
-    }
-
-    return false;
+    return calculateCancellationBreakdown(
+      booking.totalAmount,
+      booking.date,
+      booking.startTime
+    ).canCancel;
   };
 
   if (loading) {
@@ -430,6 +448,31 @@ export default function BookingDetailScreen() {
                 </Text>
               </View>
             </View>
+
+            {booking.refundDetails && (
+              <>
+                <View style={styles.divider} />
+
+                <View style={styles.paymentRow}>
+                  <Text style={styles.paymentLabel}>Refund Status</Text>
+                  <Text style={styles.paymentValue}>{booking.refundDetails.status.toUpperCase()}</Text>
+                </View>
+
+                <View style={styles.paymentRow}>
+                  <Text style={styles.paymentLabel}>Refund Amount</Text>
+                  <Text style={styles.paymentValue}>
+                    {formatCurrency(booking.refundDetails.refundAmount || 0)}
+                  </Text>
+                </View>
+
+                <View style={styles.paymentRow}>
+                  <Text style={styles.paymentLabel}>Cancellation Charge</Text>
+                  <Text style={styles.paymentValue}>
+                    {formatCurrency(booking.refundDetails.cancellationCharge || 0)}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
 

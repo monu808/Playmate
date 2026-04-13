@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { Modal } from './ui';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,7 +29,7 @@ import {
   resolveTurfPricing,
 } from '../lib/utils';
 import { TIME_SLOTS, RAZORPAY_KEY_ID } from '../lib/constants';
-import { createBooking, getUnavailableSlots } from '../lib/firebase/firestore';
+import { calculateBookingPricing, getUnavailableSlots } from '../lib/firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { theme } from '../lib/theme';
 // WebView-based Razorpay (works in Expo Go!)
@@ -47,7 +48,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
   onClose,
   onBookingSuccess,
 }) => {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [startTime, setStartTime] = useState<string | null>(null);
   const [endTime, setEndTime] = useState<string | null>(null);
@@ -56,6 +57,13 @@ const BookingModal: React.FC<BookingModalProps> = ({
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [rewardCode, setRewardCode] = useState('');
+  const [requestedSpiritPoints, setRequestedSpiritPoints] = useState(0);
+  const [availableSpiritPoints, setAvailableSpiritPoints] = useState(0);
+  const [sliderTrackWidth, setSliderTrackWidth] = useState(0);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState('');
+  const [pricingQuote, setPricingQuote] = useState<any | null>(null);
   
   // Compact processing/success popup state
   const [showStatusPopup, setShowStatusPopup] = useState(false);
@@ -105,8 +113,24 @@ const BookingModal: React.FC<BookingModalProps> = ({
       setStartTime(null);
       setEndTime(null);
       setAgreedToTerms(false);
+      setRewardCode('');
+      setRequestedSpiritPoints(0);
+      setQuoteError('');
+      setPricingQuote(null);
+      setAvailableSpiritPoints(Math.max(0, Number(userData?.spiritPoints || 0)));
     }
-  }, [visible, selectedDate, turf?.id, loadBookedSlots]); // ✅ FIXED: Added loadBookedSlots to dependencies
+  }, [visible, selectedDate, turf?.id, loadBookedSlots, userData?.spiritPoints]); // ✅ FIXED: Added loadBookedSlots to dependencies
+
+  useEffect(() => {
+    if (requestedSpiritPoints > availableSpiritPoints) {
+      setRequestedSpiritPoints(availableSpiritPoints);
+    }
+  }, [requestedSpiritPoints, availableSpiritPoints]);
+
+  useEffect(() => {
+    setQuoteError('');
+    setPricingQuote(null);
+  }, [startTime, endTime, selectedDate]);
 
   const isTimeSlotBooked = (time: string) => {
     // Check if this time overlaps with any booked slots
@@ -178,7 +202,73 @@ const BookingModal: React.FC<BookingModalProps> = ({
     return true;
   };
 
-  const handlePayment = () => {
+  const setPointsByRatio = useCallback((ratio: number) => {
+    const safeAvailablePoints = Math.max(0, availableSpiritPoints);
+    if (safeAvailablePoints === 0) {
+      setRequestedSpiritPoints(0);
+      return;
+    }
+
+    const clampedRatio = Math.max(0, Math.min(1, ratio));
+    const rawPoints = Math.round(safeAvailablePoints * clampedRatio);
+    setRequestedSpiritPoints(Math.min(safeAvailablePoints, rawPoints));
+  }, [availableSpiritPoints]);
+
+  const handleSpiritSliderTouch = useCallback((locationX: number) => {
+    if (sliderTrackWidth <= 0) {
+      return;
+    }
+
+    setPointsByRatio(locationX / sliderTrackWidth);
+  }, [sliderTrackWidth, setPointsByRatio]);
+
+  const refreshPricingQuote = useCallback(async () => {
+    if (!user || !startTime || !endTime) {
+      return null;
+    }
+
+    setQuoteLoading(true);
+    setQuoteError('');
+
+    const result = await calculateBookingPricing({
+      turfId: turf.id,
+      date: format(selectedDate, 'yyyy-MM-dd'),
+      startTime,
+      endTime,
+      rewardCode: rewardCode.trim() || undefined,
+      requestedSpiritPoints,
+    });
+
+    setQuoteLoading(false);
+
+    if (!result.success || !result.quote) {
+      const errorText = result.error || 'Unable to calculate discounted price right now';
+      setQuoteError(errorText);
+      return null;
+    }
+
+    const quote = result.quote;
+    setPricingQuote(quote);
+    setAvailableSpiritPoints(Math.max(0, Number(quote.availableSpiritPoints || 0)));
+
+    if (rewardCode.trim() && quote?.rewardCodeValidation?.valid === false) {
+      setQuoteError(quote?.rewardCodeValidation?.message || 'Invalid reward code');
+      return quote;
+    }
+
+    setQuoteError('');
+    return quote;
+  }, [
+    user,
+    startTime,
+    endTime,
+    turf?.id,
+    selectedDate,
+    rewardCode,
+    requestedSpiritPoints,
+  ]);
+
+  const handlePayment = async () => {
     if (!startTime || !endTime) {
       Alert.alert('Error', 'Please select both start and end time');
       return;
@@ -199,8 +289,21 @@ const BookingModal: React.FC<BookingModalProps> = ({
       return;
     }
 
+    const latestQuote = await refreshPricingQuote();
+    if (!latestQuote) {
+      Alert.alert('Pricing Error', 'Unable to refresh final payable amount. Please try again.');
+      return;
+    }
+
+    if (rewardCode.trim() && latestQuote?.rewardCodeValidation?.valid === false) {
+      Alert.alert('Invalid Reward Code', latestQuote?.rewardCodeValidation?.message || 'Please check your code and try again.');
+      return;
+    }
+
+    const payableAmount = Number(latestQuote?.breakdown?.totalAmount || breakdown.totalAmount);
+
     // Show payment modal directly
-    console.log('💰 Opening payment modal for amount:', breakdown.totalAmount);
+    console.log('💰 Opening payment modal for amount:', payableAmount);
     console.log('🔑 Razorpay Key ID:', RAZORPAY_KEY_ID);
     console.log('👤 User details:', {
       name: user.displayName,
@@ -213,10 +316,13 @@ const BookingModal: React.FC<BookingModalProps> = ({
 
   const handlePaymentSuccess = async (paymentData: any) => {
     // Capture current values before any state changes
-    const currentBreakdown = breakdown;
+    const currentBreakdown = effectiveBreakdown;
+    const currentDiscount = effectiveDiscount;
     const currentStartTime = startTime!;
     const currentEndTime = endTime!;
     const currentDate = format(selectedDate, 'yyyy-MM-dd');
+    const normalizedRewardCode = rewardCode.trim().toUpperCase();
+    const requestedPoints = Math.max(0, Math.floor(requestedSpiritPoints));
     
     // Close Razorpay and show compact processing popup immediately
     setShowPaymentModal(false);
@@ -244,6 +350,9 @@ const BookingModal: React.FC<BookingModalProps> = ({
         totalAmount: currentBreakdown.totalAmount,
         status: 'confirmed' as const,
         paymentBreakdown: currentBreakdown,
+        appliedDiscount: currentDiscount,
+        requestedRewardCode: normalizedRewardCode,
+        requestedSpiritPoints: requestedPoints,
         createdAt: new Date(),
       };
 
@@ -266,6 +375,14 @@ const BookingModal: React.FC<BookingModalProps> = ({
           paymentDetails: verificationResult.payment,
         },
         verifiedPayment: verificationResult,
+        pricingInput: {
+          turfId: turf.id,
+          date: currentDate,
+          startTime: currentStartTime,
+          endTime: currentEndTime,
+          rewardCode: normalizedRewardCode || undefined,
+          requestedSpiritPoints: requestedPoints,
+        },
       });
 
       const result = bookingResponse.data as any;
@@ -330,6 +447,9 @@ const BookingModal: React.FC<BookingModalProps> = ({
     calculatePaymentBreakdown(baseTurfAmount),
     [baseTurfAmount]
   );
+
+  const effectiveBreakdown = pricingQuote?.breakdown || breakdown;
+  const effectiveDiscount = pricingQuote?.selectedDiscount || null;
   
   const duration = useMemo(() => 
     startTime && endTime ? calculateDuration(startTime, endTime) : 0,
@@ -571,6 +691,109 @@ const BookingModal: React.FC<BookingModalProps> = ({
           )}
         </View>
 
+        {/* Offers & Spirit Points */}
+        {startTime && endTime && isValidTimeRange() && (
+          <View style={styles.section}>
+            <View style={styles.offerHeaderRow}>
+              <Text style={styles.sectionTitle}>Offers & Spirit Points</Text>
+              {quoteLoading && <ActivityIndicator size="small" color="#16a34a" />}
+            </View>
+
+            <View style={styles.offerCard}>
+              <Text style={styles.offerLabel}>Milestone Reward Code</Text>
+              <TextInput
+                style={styles.offerInput}
+                placeholder="Enter your reward code"
+                placeholderTextColor="#9ca3af"
+                autoCapitalize="characters"
+                value={rewardCode}
+                onChangeText={setRewardCode}
+              />
+
+              <View style={styles.pointsHeaderRow}>
+                <Text style={styles.offerLabel}>Spirit Points</Text>
+                <Text style={styles.pointsMetaText}>
+                  Available: {availableSpiritPoints}
+                </Text>
+              </View>
+
+              <View style={styles.pointsSliderContainer}>
+                <View
+                  style={styles.pointsSliderTrack}
+                  onLayout={(event) => setSliderTrackWidth(event.nativeEvent.layout.width)}
+                  onStartShouldSetResponder={() => true}
+                  onResponderGrant={(event) => handleSpiritSliderTouch(event.nativeEvent.locationX)}
+                  onResponderMove={(event) => handleSpiritSliderTouch(event.nativeEvent.locationX)}
+                >
+                  <View
+                    style={[
+                      styles.pointsSliderFill,
+                      {
+                        width:
+                          availableSpiritPoints > 0
+                            ? `${Math.min(100, (requestedSpiritPoints / availableSpiritPoints) * 100)}%`
+                            : '0%',
+                      },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.pointsSliderThumb,
+                      {
+                        left:
+                          availableSpiritPoints > 0
+                            ? `${Math.min(100, (requestedSpiritPoints / availableSpiritPoints) * 100)}%`
+                            : '0%',
+                      },
+                    ]}
+                  />
+                </View>
+                <View style={styles.pointsScaleRow}>
+                  <Text style={styles.pointsScaleText}>0</Text>
+                  <Text style={styles.pointsScaleText}>{availableSpiritPoints}</Text>
+                </View>
+              </View>
+
+              <View style={styles.pointsValueRow}>
+                <TouchableOpacity
+                  style={styles.pointsStepperButton}
+                  onPress={() => setRequestedSpiritPoints((prev) => Math.max(0, prev - 5))}
+                >
+                  <Ionicons name="remove" size={16} color="#111827" />
+                </TouchableOpacity>
+                <Text style={styles.pointsSelectedText}>{requestedSpiritPoints} points</Text>
+                <TouchableOpacity
+                  style={styles.pointsStepperButton}
+                  onPress={() =>
+                    setRequestedSpiritPoints((prev) =>
+                      Math.min(availableSpiritPoints, prev + 5)
+                    )
+                  }
+                >
+                  <Ionicons name="add" size={16} color="#111827" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.pointsValueHint}>
+                Approx discount value: {formatCurrency(requestedSpiritPoints * 0.5)}
+              </Text>
+
+              {quoteError ? <Text style={styles.quoteErrorText}>{quoteError}</Text> : null}
+
+              <TouchableOpacity
+                style={styles.refreshQuoteButton}
+                onPress={refreshPricingQuote}
+                disabled={quoteLoading}
+              >
+                <Ionicons name="sparkles-outline" size={16} color="#ffffff" />
+                <Text style={styles.refreshQuoteText}>
+                  {quoteLoading ? 'Refreshing...' : 'Refresh Final Price'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Payment Breakdown - COLLAPSIBLE */}
         {startTime && endTime && isValidTimeRange() && (
           <View style={styles.section}>
@@ -593,28 +816,38 @@ const BookingModal: React.FC<BookingModalProps> = ({
                     Base Turf Amount ({duration}h x {formatCurrency(pricingSnapshot.pricePerHour)})
                   </Text>
                   <Text style={styles.breakdownValue}>
-                    {formatCurrency(breakdown.baseTurfAmount)}
+                    {formatCurrency(effectiveBreakdown.baseTurfAmount)}
                   </Text>
                 </View>
                 <View style={styles.breakdownRow}>
                   <Text style={styles.breakdownLabel}>Platform Commission</Text>
                   <Text style={styles.breakdownValue}>
-                    {formatCurrency(breakdown.platformCommission)}
+                    {formatCurrency(effectiveBreakdown.platformCommission)}
                   </Text>
                 </View>
+                {(effectiveBreakdown.discountAmount || 0) > 0 && (
+                  <View style={styles.breakdownRow}>
+                    <Text style={styles.breakdownDiscountLabel}>
+                      Discount ({effectiveBreakdown.discountLabel || 'Best available offer'})
+                    </Text>
+                    <Text style={styles.breakdownDiscountValue}>
+                      -{formatCurrency(effectiveBreakdown.discountAmount || 0)}
+                    </Text>
+                  </View>
+                )}
                 <View style={styles.breakdownRow}>
                   <Text style={styles.breakdownLabel}>
                     Payment Gateway Fee (2.07%)
                   </Text>
                   <Text style={styles.breakdownValue}>
-                    {formatCurrency(breakdown.razorpayFee)}
+                    {formatCurrency(effectiveBreakdown.razorpayFee)}
                   </Text>
                 </View>
                 <View style={styles.divider} />
                 <View style={styles.breakdownRow}>
                   <Text style={styles.breakdownLabelTotal}>Total Amount</Text>
                   <Text style={styles.breakdownValueTotal}>
-                    {formatCurrency(breakdown.totalAmount)}
+                    {formatCurrency(effectiveBreakdown.totalAmount)}
                   </Text>
                 </View>
                 
@@ -625,13 +858,13 @@ const BookingModal: React.FC<BookingModalProps> = ({
                     <View style={styles.shareItem}>
                       <Text style={styles.shareLabel}>Turf Owner Gets</Text>
                       <Text style={styles.shareValue}>
-                        {formatCurrency(breakdown.ownerShare)}
+                        {formatCurrency(effectiveBreakdown.ownerShare)}
                       </Text>
                     </View>
                     <View style={styles.shareItem}>
                       <Text style={styles.shareLabel}>Platform Gets</Text>
                       <Text style={styles.shareValue}>
-                        {formatCurrency(breakdown.platformShare)}
+                        {formatCurrency(effectiveBreakdown.platformShare)}
                       </Text>
                     </View>
                   </View>
@@ -673,7 +906,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
           ) : (
             <>
               <Text style={styles.bookButtonText}>
-                Pay {formatCurrency(breakdown.totalAmount)}
+                Pay {formatCurrency(effectiveBreakdown.totalAmount)}
               </Text>
               <Ionicons name="arrow-forward" size={20} color="#ffffff" />
             </>
@@ -685,7 +918,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
       {user && startTime && endTime && (
         <RazorpayWebView
           visible={showPaymentModal}
-          amount={breakdown.totalAmount}
+          amount={effectiveBreakdown.totalAmount}
           currency="INR"
           keyId={RAZORPAY_KEY_ID}
           name="Playmate"
@@ -858,6 +1091,125 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     marginTop: 8,
   },
+  offerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  offerCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14,
+    gap: 10,
+  },
+  offerLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  offerInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#111827',
+    backgroundColor: '#ffffff',
+  },
+  pointsHeaderRow: {
+    marginTop: 2,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pointsMetaText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  pointsSliderContainer: {
+    gap: 8,
+  },
+  pointsSliderTrack: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#e2e8f0',
+    justifyContent: 'center',
+  },
+  pointsSliderFill: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#16a34a',
+  },
+  pointsSliderThumb: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    marginLeft: -8,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: '#16a34a',
+  },
+  pointsScaleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  pointsScaleText: {
+    fontSize: 11,
+    color: '#64748b',
+  },
+  pointsValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 2,
+  },
+  pointsStepperButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  pointsSelectedText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  pointsValueHint: {
+    fontSize: 12,
+    color: '#334155',
+    textAlign: 'center',
+  },
+  quoteErrorText: {
+    fontSize: 12,
+    color: '#dc2626',
+    fontWeight: '500',
+  },
+  refreshQuoteButton: {
+    marginTop: 4,
+    backgroundColor: '#16a34a',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  refreshQuoteText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   breakdownRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -872,6 +1224,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#111827',
+  },
+  breakdownDiscountLabel: {
+    fontSize: 14,
+    color: '#15803d',
+    flex: 1,
+    fontWeight: '600',
+  },
+  breakdownDiscountValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#16a34a',
   },
   divider: {
     height: 1,

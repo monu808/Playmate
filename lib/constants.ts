@@ -14,10 +14,27 @@ export const GOOGLE_MAPS_API_KEY = 'AIzaSyBSRDlU1pYUR2afuRIUU2H4vWHDRe_n3_o';
 export const PLATFORM_COMMISSION = 25; // Rs 25 per booking
 export const RAZORPAY_FEE_PERCENTAGE = 2.07; // 1.75% + 18% GST
 
+// Cancellation & refund policy constants
+export const CANCELLATION_FULL_REFUND_WINDOW_MINUTES = 60;
+export const LATE_CANCELLATION_CHARGE = 30;
+export const LATE_CANCELLATION_OWNER_SHARE = 25;
+export const LATE_CANCELLATION_PLATFORM_SHARE = 5;
+
 // Turf pricing defaults
 export const DEFAULT_DYNAMIC_BOUNDARY_TIME = '18:00';
 export const DEFAULT_DAY_START_TIME = '06:00';
 export const DEFAULT_MANUAL_ACTIVE_PERIOD = 'day' as const;
+export const DEFAULT_HAPPY_HOUR_ENABLED = true;
+export const DEFAULT_HAPPY_HOUR_DISCOUNT_PERCENT = 30;
+export const DEFAULT_HAPPY_HOUR_START_TIME = '11:00';
+export const DEFAULT_HAPPY_HOUR_END_TIME = '16:00';
+export const DEFAULT_HAPPY_HOUR_LEAD_TIME_MINUTES = 120;
+
+// Rewards and loyalty defaults
+export const MILESTONE_COMPLETED_MATCHES = 5;
+export const MILESTONE_REWARD_DISCOUNT_PERCENT = 50;
+export const SPIRIT_POINT_RUPEE_VALUE = 0.5;
+export const SPIRIT_POINTS_EARNING_DIVISOR = 20; // 1 point per ₹20 spent on turf amount
 
 // Payout constants
 export const PAYOUT_FEE = {

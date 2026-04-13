@@ -2,47 +2,71 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    // Helper function to check if user is authenticated
+
+    // Auth helpers
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    // Helper function to check if user is admin
+
+    function hasUserDoc() {
+      return isAuthenticated() &&
+             exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    // Role helpers
     function isAdmin() {
-      return isAuthenticated() && 
+      return hasUserDoc() &&
              get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
-    
-    // Helper function to check if user is owner
+
     function isOwner() {
-      return isAuthenticated() && 
+      return hasUserDoc() &&
              get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'owner';
     }
-    
-    // Helper function to validate image file
-    function isValidImage() {
-      return request.resource.size < 5 * 1024 * 1024 && // Max 5MB
+
+    function isAdminOrOwner() {
+      return isAdmin() || isOwner();
+    }
+
+    // File validation helpers
+    function isValidImage(maxBytes) {
+      return request.resource != null &&
+             request.resource.size < maxBytes &&
+             request.resource.contentType != null &&
              request.resource.contentType.matches('image/.*');
     }
-    
-    // Turf images and profile images - Allow authenticated users, owners, and admins
+
+    // Profile images: user can manage own files, admin can manage any
+    match /profiles/{userId}/{fileName} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() &&
+                              (request.auth.uid == userId || isAdmin()) &&
+                              isValidImage(5 * 1024 * 1024); // Max 5MB
+      allow delete: if isAuthenticated() &&
+                      (request.auth.uid == userId || isAdmin());
+    }
+
+    // Preferred turf image path: /turfs/{ownerId}/...
+    match /turfs/{ownerId}/{allImages=**} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() &&
+                              (request.auth.uid == ownerId || isAdmin()) &&
+                              isValidImage(10 * 1024 * 1024); // Max 10MB
+      allow delete: if isAuthenticated() &&
+                      (request.auth.uid == ownerId || isAdmin());
+    }
+
+    // Backward-compatible turf image path fallback: /turfs/...
+    // Restrict to owner/admin only (not general users).
     match /turfs/{allImages=**} {
-      allow read: if true; // Public read for all turf images and profiles
-      allow write: if isAuthenticated() && isValidImage(); // Any authenticated user can upload
-      allow delete: if isAuthenticated() && (isAdmin() || isOwner()); // Only admins and owners can delete
+      allow read: if true;
+      allow create, update: if isAuthenticated() &&
+                              isAdminOrOwner() &&
+                              isValidImage(10 * 1024 * 1024);
+      allow delete: if isAuthenticated() &&
+                      isAdminOrOwner();
     }
-    
-    // Profile images - Allow users to upload their own profile images
-    match /profiles/{userId}/{allImages=**} {
-      allow read: if true; // Public read for profile images
-      allow write: if isAuthenticated() && 
-                     (request.auth.uid == userId || isAdmin()) && 
-                     isValidImage(); // Users can upload their own, admins can upload any
-      allow delete: if isAuthenticated() && 
-                      (request.auth.uid == userId || isAdmin()); // Users can delete their own
-    }
-    
+
     // Default deny all other paths
     match /{allPaths=**} {
       allow read, write: if false;

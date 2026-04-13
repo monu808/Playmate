@@ -15,8 +15,11 @@ import { OnboardingScreen } from '../components/OnboardingScreen';
 import HomeScreen from '../screens/HomeScreen';
 import TurfDetailScreen from '../screens/TurfDetailScreen';
 import BookingsScreen from '../screens/BookingsScreen';
+import PlayerFinderScreen from '../screens/PlayerFinderScreen';
+import PlayerFinderChatScreen from '../screens/PlayerFinderChatScreen';
 import BookingDetailScreen from '../screens/BookingDetailScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import PaymentHistoryScreen from '../screens/PaymentHistoryScreen';
 
 // Auth Screens
 import LoginScreen from '../screens/Auth/LoginScreen';
@@ -52,6 +55,8 @@ export type RootStackParamList = {
   Owner: undefined;
   TurfDetail: { id: string };
   BookingDetail: { bookingId: string };
+  PlayerFinderChat: { postId: string; turfName: string };
+  PaymentHistory: undefined;
   AddTurf: undefined;
   OwnerScanQR: undefined;
   ManageSlots: undefined;
@@ -68,6 +73,7 @@ export type AuthStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Bookings: undefined;
+  PlayerFinder: undefined;
   Profile: undefined;
 };
 
@@ -193,6 +199,8 @@ function MainTabs() {
             iconName = focused ? 'home' : 'home-outline';
           } else if (route.name === 'Bookings') {
             iconName = focused ? 'calendar' : 'calendar-outline';
+          } else if (route.name === 'PlayerFinder') {
+            iconName = focused ? 'people' : 'people-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           } else {
@@ -208,6 +216,11 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Bookings" component={BookingsScreen} />
+      <Tab.Screen
+        name="PlayerFinder"
+        component={PlayerFinderScreen}
+        options={{ tabBarLabel: 'Players' }}
+      />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
@@ -378,6 +391,22 @@ export default function Navigation() {
               options={{ headerShown: false }}
             />
           </>
+        )}
+
+        {isAuthenticated && (
+          <Stack.Screen
+            name="PaymentHistory"
+            component={PaymentHistoryScreen}
+            options={{ headerShown: false }}
+          />
+        )}
+
+        {isAuthenticated && (
+          <Stack.Screen
+            name="PlayerFinderChat"
+            component={PlayerFinderChatScreen}
+            options={{ headerShown: false }}
+          />
         )}
       </Stack.Navigator>
     </NavigationContainer>

@@ -26,6 +26,8 @@ export default function AdminEditTurfPricingScreen({ navigation, route }: any) {
   const [nightPricePerHour, setNightPricePerHour] = useState('');
   const [dynamicPricingEnabled, setDynamicPricingEnabled] = useState(true);
   const [manualActivePeriod, setManualActivePeriod] = useState<'day' | 'night'>('day');
+  const [happyHourEnabled, setHappyHourEnabled] = useState(true);
+  const [happyHourDiscountPercent, setHappyHourDiscountPercent] = useState('30');
 
   const loadTurf = useCallback(async () => {
     if (!turfId) {
@@ -49,6 +51,8 @@ export default function AdminEditTurfPricingScreen({ navigation, route }: any) {
       setNightPricePerHour(String(pricing.nightPricePerHour || ''));
       setDynamicPricingEnabled(pricing.dynamicPricingEnabled);
       setManualActivePeriod(pricing.manualActivePeriod);
+      setHappyHourEnabled(turf.happyHourEnabled ?? true);
+      setHappyHourDiscountPercent(String(turf.happyHourDiscountPercent ?? 30));
     } catch (error) {
       Alert.alert('Error', 'Unable to load turf pricing');
       navigation.goBack();
@@ -64,6 +68,7 @@ export default function AdminEditTurfPricingScreen({ navigation, route }: any) {
   const handleSave = async () => {
     const dayPrice = parseFloat(dayPricePerHour);
     const nightPrice = parseFloat(nightPricePerHour);
+    const happyHourDiscount = parseFloat(happyHourDiscountPercent);
 
     if (!dayPricePerHour || !nightPricePerHour || Number.isNaN(dayPrice) || Number.isNaN(nightPrice)) {
       Alert.alert('Error', 'Please enter valid day and night prices');
@@ -72,6 +77,11 @@ export default function AdminEditTurfPricingScreen({ navigation, route }: any) {
 
     if (dayPrice <= 0 || nightPrice <= 0) {
       Alert.alert('Error', 'Day and night prices must be greater than zero');
+      return;
+    }
+
+    if (Number.isNaN(happyHourDiscount) || happyHourDiscount <= 0 || happyHourDiscount > 90) {
+      Alert.alert('Error', 'Happy Hour discount must be between 1% and 90%');
       return;
     }
 
@@ -89,6 +99,11 @@ export default function AdminEditTurfPricingScreen({ navigation, route }: any) {
         dynamicPricingEnabled,
         dynamicBoundaryTime: '18:00',
         manualActivePeriod,
+        happyHourEnabled,
+        happyHourDiscountPercent: happyHourDiscount,
+        happyHourStartTime: '11:00',
+        happyHourEndTime: '16:00',
+        happyHourLeadTimeMinutes: 120,
         pricePerHour: effectivePricePerHour,
         price: effectivePricePerHour,
       } as any);
@@ -206,6 +221,30 @@ export default function AdminEditTurfPricingScreen({ navigation, route }: any) {
               </View>
             </View>
           )}
+
+          <View style={styles.dynamicToggleRow}>
+            <View style={styles.dynamicToggleContent}>
+              <Text style={styles.dynamicToggleLabel}>Happy Hour Auto Discount</Text>
+              <Text style={styles.dynamicToggleHint}>
+                Applies for 11:00-16:00 slots when booked within 2 hours
+              </Text>
+            </View>
+            <Switch
+              value={happyHourEnabled}
+              onValueChange={setHappyHourEnabled}
+              trackColor={{ false: colors.gray[300], true: colors.primary[200] }}
+              thumbColor={happyHourEnabled ? colors.primary[600] : colors.gray[500]}
+            />
+          </View>
+
+          <Input
+            label="Happy Hour Discount (%)"
+            placeholder="e.g., 30"
+            value={happyHourDiscountPercent}
+            onChangeText={setHappyHourDiscountPercent}
+            keyboardType="numeric"
+            required
+          />
 
           <Button
             text="Save Pricing"

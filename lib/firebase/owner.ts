@@ -2,6 +2,25 @@
 import { Timestamp } from '@react-native-firebase/firestore';
 import { db } from '../../config/firebase';
 import { Turf, Booking } from '../../types';
+import {
+  DEFAULT_HAPPY_HOUR_DISCOUNT_PERCENT,
+  DEFAULT_HAPPY_HOUR_ENABLED,
+  DEFAULT_HAPPY_HOUR_END_TIME,
+  DEFAULT_HAPPY_HOUR_LEAD_TIME_MINUTES,
+  DEFAULT_HAPPY_HOUR_START_TIME,
+} from '../constants';
+
+const getOwnerEarningForBooking = (booking: Booking): number => {
+  if (booking.status === 'cancelled') {
+    return booking.refundDetails?.ownerCompensation || 0;
+  }
+
+  if (booking.status === 'confirmed' || booking.status === 'completed') {
+    return booking.paymentBreakdown?.ownerShare || booking.totalAmount || 0;
+  }
+
+  return 0;
+};
 
 // ============ OWNER TURFS ============
 
@@ -26,6 +45,17 @@ export const getOwnerTurfs = async (ownerId: string): Promise<Turf[]> => {
         dynamicPricingEnabled: data?.dynamicPricingEnabled ?? false,
         dynamicBoundaryTime: data?.dynamicBoundaryTime || '18:00',
         manualActivePeriod: data?.manualActivePeriod === 'night' ? 'night' : 'day',
+        happyHourEnabled: data?.happyHourEnabled ?? DEFAULT_HAPPY_HOUR_ENABLED,
+        happyHourDiscountPercent:
+          typeof data?.happyHourDiscountPercent === 'number'
+            ? data.happyHourDiscountPercent
+            : DEFAULT_HAPPY_HOUR_DISCOUNT_PERCENT,
+        happyHourStartTime: data?.happyHourStartTime || DEFAULT_HAPPY_HOUR_START_TIME,
+        happyHourEndTime: data?.happyHourEndTime || DEFAULT_HAPPY_HOUR_END_TIME,
+        happyHourLeadTimeMinutes:
+          typeof data?.happyHourLeadTimeMinutes === 'number'
+            ? data.happyHourLeadTimeMinutes
+            : DEFAULT_HAPPY_HOUR_LEAD_TIME_MINUTES,
         createdAt: data.createdAt?.toDate?.() || new Date(),
         verifiedAt: data.verifiedAt?.toDate?.(),
       };
@@ -245,16 +275,15 @@ export const getOwnerStats = async (ownerId: string) => {
     
     // Calculate revenue
     const totalRevenue = bookings
-      .filter(b => b.status === 'confirmed' || b.status === 'completed')
-      .reduce((sum, b) => sum + (b.paymentBreakdown?.ownerShare || b.totalAmount || 0), 0);
+      .reduce((sum, b) => sum + getOwnerEarningForBooking(b), 0);
     
     const todayRevenue = bookings
-      .filter(b => b.date === today && (b.status === 'confirmed' || b.status === 'completed'))
-      .reduce((sum, b) => sum + (b.paymentBreakdown?.ownerShare || b.totalAmount || 0), 0);
+      .filter(b => b.date === today)
+      .reduce((sum, b) => sum + getOwnerEarningForBooking(b), 0);
     
     const monthRevenue = bookings
-      .filter(b => b.date?.startsWith(thisMonth) && (b.status === 'confirmed' || b.status === 'completed'))
-      .reduce((sum, b) => sum + (b.paymentBreakdown?.ownerShare || b.totalAmount || 0), 0);
+      .filter(b => b.date?.startsWith(thisMonth))
+      .reduce((sum, b) => sum + getOwnerEarningForBooking(b), 0);
     
     console.log('✅ Stats calculated successfully');
     
@@ -307,9 +336,9 @@ export const getOwnerRevenueAnalytics = async (
     const revenueByDate: { [date: string]: number } = {};
     
     filteredBookings.forEach(booking => {
-      if (booking.status === 'confirmed' || booking.status === 'completed') {
-        const date = booking.date;
-        const revenue = booking.paymentBreakdown?.ownerShare || booking.totalAmount || 0;
+      const date = booking.date;
+      const revenue = getOwnerEarningForBooking(booking);
+      if (revenue > 0) {
         revenueByDate[date] = (revenueByDate[date] || 0) + revenue;
       }
     });
