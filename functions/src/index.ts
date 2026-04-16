@@ -55,6 +55,10 @@ const MILESTONE_COMPLETED_MATCHES = 5;
 const MILESTONE_REWARD_DISCOUNT_PERCENT = 50;
 const SPIRIT_POINT_RUPEE_VALUE = 0.5;
 const SPIRIT_POINTS_EARNING_DIVISOR = 20;
+const PLAYER_GROUP_MAX_MEMBERS = 50;
+const PLAYER_GROUP_NAME_MAX_LENGTH = 50;
+const PLAYER_GROUP_DESCRIPTION_MAX_LENGTH = 240;
+const TURF_REVIEW_COMMENT_MAX_LENGTH = 500;
 
 type DiscountSource = "none" | "happy_hour" | "reward_code" | "spirit_points";
 
@@ -174,6 +178,27 @@ const isWithinHappyHourWindow = (
 
 const normalizeRewardCode = (value: unknown): string => {
   return String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+};
+
+const normalizeEmail = (value: unknown): string => {
+  return String(value || "").trim().toLowerCase();
+};
+
+const getUserDisplayName = (userData: any, fallbackEmail?: string): string => {
+  const fromProfile =
+    String(userData?.name || "").trim() ||
+    String(userData?.displayName || "").trim();
+
+  if (fromProfile) {
+    return fromProfile;
+  }
+
+  const safeEmail = String(fallbackEmail || "").trim();
+  if (safeEmail.includes("@")) {
+    return safeEmail.split("@")[0];
+  }
+
+  return "Player";
 };
 
 const calculatePaymentBreakdown = (
@@ -414,6 +439,54 @@ interface CancellationBreakdown {
 
 const parseBookingStartDateTime = (date: string, startTime: string): Date => {
   return new Date(`${date}T${startTime}:00`);
+};
+
+const parseBookingEndDateTime = (
+  date: string,
+  endTime?: string,
+  startTime?: string
+): Date => {
+  const safeTime = endTime || startTime || "00:00";
+  return new Date(`${date}T${safeTime}:00`);
+};
+
+const isPlayerFinderPostExpired = (post: any, now: Date = new Date()): boolean => {
+  const endDateTime = parseBookingEndDateTime(
+    String(post?.date || ""),
+    typeof post?.endTime === "string" ? post.endTime : undefined,
+    typeof post?.startTime === "string" ? post.startTime : undefined
+  );
+
+  if (Number.isNaN(endDateTime.getTime())) {
+    return false;
+  }
+
+  return endDateTime.getTime() <= now.getTime();
+};
+
+const deleteDocumentReferencesInChunks = async (
+  refs: admin.firestore.DocumentReference[]
+): Promise<number> => {
+  if (!refs.length) {
+    return 0;
+  }
+
+  const maxBatchSize = 450;
+  let deletedCount = 0;
+
+  for (let i = 0; i < refs.length; i += maxBatchSize) {
+    const slice = refs.slice(i, i + maxBatchSize);
+    const batch = db.batch();
+
+    slice.forEach((ref) => {
+      batch.delete(ref);
+    });
+
+    await batch.commit();
+    deletedCount += slice.length;
+  }
+
+  return deletedCount;
 };
 
 const calculateCancellationBreakdown = (
@@ -706,6 +779,9 @@ export const createVerifiedBooking = functions.https.onCall(async (data, context
       bookingData?.paymentId ||
       "";
 
+    const turfSnap = await db.collection("turfs").doc(normalizedPricingInput.turfId).get();
+    const bookingSport = String(turfSnap.data()?.sport || bookingData?.sport || "football").trim() || "football";
+
     const bookingRef = db.collection("bookings").doc();
     const paymentTransactionRef = db.collection("transactions").doc();
     const userRef = db.collection("users").doc(authUid);
@@ -809,6 +885,7 @@ export const createVerifiedBooking = functions.https.onCall(async (data, context
         ...bookingData,
         id: bookingRef.id,
         turfId: normalizedPricingInput.turfId,
+        sport: bookingSport,
         date: normalizedPricingInput.date,
         startTime: normalizedPricingInput.startTime,
         endTime: normalizedPricingInput.endTime,
@@ -1462,6 +1539,506 @@ export const onBookingCompletedAwardBenefits = functions.firestore
   });
 
 /**
+ * Create a player group owned by the authenticated user.
+ */
+export const createPlayerGroup = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "User must be authenticated");
+  }
+
+  const ownerId = context.auth.uid;
+  const name = String(data?.name || "").trim();
+  const description = String(data?.description || "").trim();
+  const sports = Array.isArray(data?.sports)
+    ? data.sports
+      .map((item: unknown) => String(item || "").trim().toLowerCase())
+      .filter((item: string) => !!item)
+      .slice(0, 5)
+    : [];
+
+  if (name.length < 3 || name.length > PLAYER_GROUP_NAME_MAX_LENGTH) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      `Group name must be between 3 and ${PLAYER_GROUP_NAME_MAX_LENGTH} characters`
+    );
+  }
+
+  if (description.length > PLAYER_GROUP_DESCRIPTION_MAX_LENGTH) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      `Group description must be up to ${PLAYER_GROUP_DESCRIPTION_MAX_LENGTH} characters`
+    );
+  }
+
+  const ownerRef = db.collection("users").doc(ownerId);
+  const ownerSnap = await ownerRef.get();
+  const ownerData = ownerSnap.data() || {};
+  const ownerEmail = String(ownerData?.email || context.auth.token?.email || "").trim() || null;
+  const ownerName = getUserDisplayName(ownerData, ownerEmail || undefined);
+
+  const groupRef = db.collection("groups").doc();
+  const ownerMember = {
+    userId: ownerId,
+    name: ownerName,
+    role: "owner",
+    joinedAt: admin.firestore.Timestamp.now(),
+    photoURL: ownerData?.photoURL || null,
+    email: ownerEmail,
+  };
+
+  await groupRef.set({
+    id: groupRef.id,
+    name,
+    description,
+    sports,
+    createdBy: ownerId,
+    createdByName: ownerName,
+    memberIds: [ownerId],
+    members: [ownerMember],
+    memberCount: 1,
+    isActive: true,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {
+    success: true,
+    groupId: groupRef.id,
+  };
+});
+
+/**
+ * Invite a teammate to group by email. Only group owner can invite.
+ */
+export const inviteGroupMember = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "User must be authenticated");
+  }
+
+  const ownerId = context.auth.uid;
+  const groupId = String(data?.groupId || "").trim();
+  const inviteeEmailRaw = String(data?.inviteeEmail || data?.email || "").trim();
+  const inviteeEmail = normalizeEmail(inviteeEmailRaw);
+
+  if (!groupId) {
+    throw new functions.https.HttpsError("invalid-argument", "groupId is required");
+  }
+
+  if (!inviteeEmail || !inviteeEmail.includes("@")) {
+    throw new functions.https.HttpsError("invalid-argument", "Valid teammate email is required");
+  }
+
+  const groupRef = db.collection("groups").doc(groupId);
+  const groupSnap = await groupRef.get();
+
+  if (!groupSnap.exists) {
+    throw new functions.https.HttpsError("not-found", "Group not found");
+  }
+
+  const groupData = groupSnap.data() || {};
+  if (groupData.createdBy !== ownerId) {
+    throw new functions.https.HttpsError("permission-denied", "Only group owner can invite members");
+  }
+
+  const memberIds: string[] = Array.isArray(groupData.memberIds)
+    ? groupData.memberIds.map((entry: unknown) => String(entry || ""))
+    : [];
+
+  if (memberIds.length >= PLAYER_GROUP_MAX_MEMBERS) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      `Group has reached the maximum limit of ${PLAYER_GROUP_MAX_MEMBERS} members`
+    );
+  }
+
+  let userSnapshot = await db
+    .collection("users")
+    .where("email", "==", inviteeEmailRaw)
+    .limit(1)
+    .get();
+
+  if (userSnapshot.empty && inviteeEmailRaw !== inviteeEmail) {
+    userSnapshot = await db
+      .collection("users")
+      .where("email", "==", inviteeEmail)
+      .limit(1)
+      .get();
+  }
+
+  if (userSnapshot.empty) {
+    throw new functions.https.HttpsError("not-found", "No user found with this email");
+  }
+
+  const invitedUserDoc = userSnapshot.docs[0];
+  const invitedUserId = invitedUserDoc.id;
+
+  if (invitedUserId === ownerId) {
+    throw new functions.https.HttpsError("failed-precondition", "You are already in this group");
+  }
+
+  if (memberIds.includes(invitedUserId)) {
+    throw new functions.https.HttpsError("already-exists", "User is already a group member");
+  }
+
+  const ownerRef = db.collection("users").doc(ownerId);
+  const ownerSnap = await ownerRef.get();
+  const ownerData = ownerSnap.data() || {};
+  const ownerName = getUserDisplayName(ownerData, context.auth.token?.email);
+
+  const invitationId = `${groupId}_${invitedUserId}`;
+  const invitationRef = db.collection("groupInvitations").doc(invitationId);
+  const invitationSnap = await invitationRef.get();
+
+  if (invitationSnap.exists && invitationSnap.data()?.status === "pending") {
+    throw new functions.https.HttpsError("already-exists", "Invitation is already pending");
+  }
+
+  await invitationRef.set({
+    id: invitationId,
+    groupId,
+    groupName: String(groupData.name || "Group"),
+    groupOwnerId: ownerId,
+    invitedBy: ownerId,
+    invitedByName: ownerName,
+    invitedUserId,
+    invitedUserEmail: normalizeEmail(invitedUserDoc.data()?.email || inviteeEmail),
+    status: "pending",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    respondedAt: null,
+  }, {merge: true});
+
+  return {
+    success: true,
+    invitationId,
+  };
+});
+
+/**
+ * Invited user accepts or declines a pending group invitation.
+ */
+export const respondToGroupInvitation = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "User must be authenticated");
+  }
+
+  const userId = context.auth.uid;
+  const invitationId = String(data?.invitationId || "").trim();
+  const actionRaw = String(data?.action || "").trim().toLowerCase();
+  const shouldAccept = actionRaw === "accept";
+  const shouldDecline = actionRaw === "decline";
+
+  if (!invitationId) {
+    throw new functions.https.HttpsError("invalid-argument", "invitationId is required");
+  }
+
+  if (!shouldAccept && !shouldDecline) {
+    throw new functions.https.HttpsError("invalid-argument", "action must be accept or decline");
+  }
+
+  await db.runTransaction(async (transaction) => {
+    const invitationRef = db.collection("groupInvitations").doc(invitationId);
+    const invitationSnap = await transaction.get(invitationRef);
+
+    if (!invitationSnap.exists) {
+      throw new functions.https.HttpsError("not-found", "Invitation not found");
+    }
+
+    const invitationData = invitationSnap.data() || {};
+
+    if (invitationData.invitedUserId !== userId) {
+      throw new functions.https.HttpsError("permission-denied", "This invitation does not belong to you");
+    }
+
+    if (invitationData.status !== "pending") {
+      throw new functions.https.HttpsError("failed-precondition", "Invitation is already processed");
+    }
+
+    const nowValue = admin.firestore.FieldValue.serverTimestamp();
+
+    if (shouldDecline) {
+      transaction.update(invitationRef, {
+        status: "declined",
+        updatedAt: nowValue,
+        respondedAt: nowValue,
+      });
+      return;
+    }
+
+    const groupId = String(invitationData.groupId || "");
+    const groupRef = db.collection("groups").doc(groupId);
+    const groupSnap = await transaction.get(groupRef);
+
+    if (!groupSnap.exists) {
+      throw new functions.https.HttpsError("not-found", "Group not found");
+    }
+
+    const groupData = groupSnap.data() || {};
+    const memberIds: string[] = Array.isArray(groupData.memberIds)
+      ? groupData.memberIds.map((entry: unknown) => String(entry || ""))
+      : [];
+    const members: any[] = Array.isArray(groupData.members) ? [...groupData.members] : [];
+
+    if (!memberIds.includes(userId)) {
+      if (memberIds.length >= PLAYER_GROUP_MAX_MEMBERS) {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          `Group has reached the maximum limit of ${PLAYER_GROUP_MAX_MEMBERS} members`
+        );
+      }
+
+      const userRef = db.collection("users").doc(userId);
+      const userSnap = await transaction.get(userRef);
+      const userData = userSnap.data() || {};
+      const userEmail = String(userData?.email || context.auth?.token?.email || invitationData.invitedUserEmail || "").trim() || null;
+
+      members.push({
+        userId,
+        name: getUserDisplayName(userData, userEmail || undefined),
+        role: "member",
+        joinedAt: admin.firestore.Timestamp.now(),
+        photoURL: userData?.photoURL || null,
+        email: userEmail,
+      });
+
+      transaction.update(groupRef, {
+        memberIds: [...memberIds, userId],
+        members,
+        memberCount: memberIds.length + 1,
+        updatedAt: nowValue,
+      });
+    } else {
+      transaction.update(groupRef, {
+        updatedAt: nowValue,
+      });
+    }
+
+    transaction.update(invitationRef, {
+      status: "accepted",
+      updatedAt: nowValue,
+      respondedAt: nowValue,
+    });
+  });
+
+  return {
+    success: true,
+    invitationId,
+  };
+});
+
+/**
+ * Submit a turf review for a completed booking.
+ * Only one review per booking is allowed.
+ */
+export const createTurfReview = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "User must be authenticated");
+  }
+
+  const userId = context.auth.uid;
+  const bookingId = String(data?.bookingId || "").trim();
+  const rating = Number(data?.rating || 0);
+  const comment = String(data?.comment || "").trim().slice(0, TURF_REVIEW_COMMENT_MAX_LENGTH);
+
+  if (!bookingId) {
+    throw new functions.https.HttpsError("invalid-argument", "bookingId is required");
+  }
+
+  if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+    throw new functions.https.HttpsError("invalid-argument", "Rating must be between 1 and 5");
+  }
+
+  await db.runTransaction(async (transaction) => {
+    const bookingRef = db.collection("bookings").doc(bookingId);
+    const bookingSnap = await transaction.get(bookingRef);
+
+    if (!bookingSnap.exists) {
+      throw new functions.https.HttpsError("not-found", "Booking not found");
+    }
+
+    const bookingData = bookingSnap.data() || {};
+
+    if (bookingData.userId !== userId) {
+      throw new functions.https.HttpsError("permission-denied", "You can review only your own booking");
+    }
+
+    if (bookingData.status !== "completed") {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Review can only be submitted after match completion"
+      );
+    }
+
+    const turfId = String(bookingData.turfId || "").trim();
+    if (!turfId) {
+      throw new functions.https.HttpsError("failed-precondition", "Booking does not have a valid turf");
+    }
+
+    const reviewRef = db.collection("turfReviews").doc(bookingId);
+    const reviewSnap = await transaction.get(reviewRef);
+
+    if (reviewSnap.exists) {
+      throw new functions.https.HttpsError("already-exists", "Review already submitted for this booking");
+    }
+
+    const userRef = db.collection("users").doc(userId);
+    const userSnap = await transaction.get(userRef);
+    const userData = userSnap.data() || {};
+    const userEmail = String(userData?.email || context.auth?.token?.email || "").trim();
+
+    const nowValue = admin.firestore.FieldValue.serverTimestamp();
+
+    transaction.set(reviewRef, {
+      id: bookingId,
+      bookingId,
+      turfId,
+      turfName: String(bookingData.turfName || "Turf"),
+      userId,
+      userName: getUserDisplayName(userData, userEmail || undefined),
+      rating: Math.round(rating),
+      comment,
+      createdAt: nowValue,
+      updatedAt: nowValue,
+    });
+
+    transaction.set(bookingRef, {
+      hasReview: true,
+      reviewId: bookingId,
+      updatedAt: nowValue,
+    }, {merge: true});
+  });
+
+  return {
+    success: true,
+    reviewId: bookingId,
+  };
+});
+
+/**
+ * Keep turf rating aggregates in sync whenever a review is created/updated/deleted.
+ */
+export const onTurfReviewWriteUpdateAggregates = functions.firestore
+  .document("turfReviews/{reviewId}")
+  .onWrite(async (change) => {
+    const beforeData = change.before.exists ? change.before.data() || {} : {};
+    const afterData = change.after.exists ? change.after.data() || {} : {};
+
+    const turfId = String(afterData.turfId || beforeData.turfId || "").trim();
+    if (!turfId) {
+      return;
+    }
+
+    const reviewsSnap = await db
+      .collection("turfReviews")
+      .where("turfId", "==", turfId)
+      .get();
+
+    let totalRating = 0;
+    let reviewCount = 0;
+
+    reviewsSnap.docs.forEach((doc) => {
+      const rating = Number(doc.data()?.rating || 0);
+      if (rating > 0) {
+        totalRating += rating;
+        reviewCount += 1;
+      }
+    });
+
+    const averageRating = reviewCount > 0 ? round2(totalRating / reviewCount) : 0;
+
+    await db.collection("turfs").doc(turfId).set({
+      rating: averageRating,
+      reviews: reviewCount,
+      totalReviews: reviewCount,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true});
+  });
+
+/**
+ * Scheduled cleanup for expired Player Finder team artifacts.
+ *
+ * Deletes:
+ * - playerFinderJoinRequests documents for expired posts
+ * - playerFinderPostMessages documents for expired posts
+ *
+ * Also marks expired open/full posts as completed so they stop appearing as active.
+ */
+export const cleanupExpiredPlayerFinderArtifacts = functions.pubsub
+  .schedule("every 60 minutes")
+  .timeZone("Asia/Kolkata")
+  .onRun(async () => {
+    const now = new Date();
+
+    try {
+      const activePostsSnap = await db
+        .collection("playerFinderPosts")
+        .where("status", "in", ["open", "full"])
+        .get();
+
+      if (activePostsSnap.empty) {
+        functions.logger.info("Player Finder cleanup skipped: no active posts found");
+        return null;
+      }
+
+      const expiredPostDocs = activePostsSnap.docs.filter((doc) => {
+        return isPlayerFinderPostExpired(doc.data(), now);
+      });
+
+      if (!expiredPostDocs.length) {
+        functions.logger.info("Player Finder cleanup skipped: no expired posts found", {
+          activePostCount: activePostsSnap.size,
+        });
+        return null;
+      }
+
+      let deletedJoinRequests = 0;
+      let deletedMessages = 0;
+      let updatedPosts = 0;
+
+      for (const postDoc of expiredPostDocs) {
+        const postId = postDoc.id;
+
+        const [joinRequestsSnap, messagesSnap] = await Promise.all([
+          db.collection("playerFinderJoinRequests").where("postId", "==", postId).get(),
+          db.collection("playerFinderPostMessages").where("postId", "==", postId).get(),
+        ]);
+
+        deletedJoinRequests += await deleteDocumentReferencesInChunks(
+          joinRequestsSnap.docs.map((doc) => doc.ref)
+        );
+
+        deletedMessages += await deleteDocumentReferencesInChunks(
+          messagesSnap.docs.map((doc) => doc.ref)
+        );
+
+        await postDoc.ref.set({
+          status: "completed",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          teamArtifactsCleanedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        updatedPosts += 1;
+      }
+
+      functions.logger.info("Player Finder cleanup completed", {
+        scannedActivePosts: activePostsSnap.size,
+        expiredPostsProcessed: expiredPostDocs.length,
+        updatedPosts,
+        deletedJoinRequests,
+        deletedMessages,
+      });
+
+      return null;
+    } catch (error: any) {
+      functions.logger.error("Player Finder cleanup failed", {
+        error: error?.message,
+        stack: error?.stack,
+      });
+      throw error;
+    }
+  });
+
+/**
  * Health check endpoint
  */
 export const healthCheck = functions.https.onRequest((req, res) => {
@@ -1475,6 +2052,12 @@ export const healthCheck = functions.https.onRequest((req, res) => {
       calculateBookingPricing: "active",
       cancelBookingWithRefund: "active",
       onBookingCompletedAwardBenefits: "active",
+      createPlayerGroup: "active",
+      inviteGroupMember: "active",
+      respondToGroupInvitation: "active",
+      createTurfReview: "active",
+      onTurfReviewWriteUpdateAggregates: "active",
+      cleanupExpiredPlayerFinderArtifacts: "active",
     },
   });
 });

@@ -284,6 +284,19 @@ export const getOwnerStats = async (ownerId: string) => {
     const monthRevenue = bookings
       .filter(b => b.date?.startsWith(thisMonth))
       .reduce((sum, b) => sum + getOwnerEarningForBooking(b), 0);
+
+    const totalReviews = turfs.reduce((sum, turf) => {
+      const turfReviews = Number(turf.totalReviews ?? turf.reviews ?? 0);
+      return sum + turfReviews;
+    }, 0);
+
+    const weightedRatingTotal = turfs.reduce((sum, turf) => {
+      const turfReviews = Number(turf.totalReviews ?? turf.reviews ?? 0);
+      const turfRating = Number(turf.rating || 0);
+      return sum + (turfRating * turfReviews);
+    }, 0);
+
+    const averageRating = totalReviews > 0 ? weightedRatingTotal / totalReviews : 0;
     
     console.log('✅ Stats calculated successfully');
     
@@ -304,6 +317,10 @@ export const getOwnerStats = async (ownerId: string) => {
         today: todayRevenue,
         thisMonth: monthRevenue,
       },
+      reviews: {
+        total: totalReviews,
+        average: Number(averageRating.toFixed(2)),
+      },
     };
   } catch (error) {
     console.error('❌ Get owner stats error:', error);
@@ -311,6 +328,7 @@ export const getOwnerStats = async (ownerId: string) => {
       turfs: { total: 0, active: 0, pending: 0, inactive: 0 },
       bookings: { total: 0, today: 0, confirmed: 0 },
       revenue: { total: 0, today: 0, thisMonth: 0 },
+      reviews: { total: 0, average: 0 },
     };
   }
 };

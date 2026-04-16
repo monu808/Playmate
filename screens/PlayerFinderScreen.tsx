@@ -21,24 +21,30 @@ import {
   createPlayerFinderPost,
   declinePlayerJoinRequest,
   getEligibleBookingsForPlayerFinder,
+  getMyGroups,
   getPendingJoinRequestsForPost,
   getPlayerFinderFeed,
   getUserJoinRequests,
   requestToJoinPlayerFinderPost,
 } from '../lib/firebase/firestore';
 import { formatTime } from '../lib/utils';
-import { Booking, PlayerFinderJoinRequest, PlayerFinderPost } from '../types';
+import { Booking, PlayerFinderJoinRequest, PlayerFinderPost, PlayerGroup } from '../types';
 import { colors, spacing, typography, borderRadius } from '../lib/theme';
 
 type JoinStatusLabel = 'none' | 'pending' | 'approved' | 'declined' | 'cancelled';
 
-const PlayerFinderScreen: React.FC = () => {
+interface PlayerFinderScreenProps {
+  embedded?: boolean;
+}
+
+const PlayerFinderScreen: React.FC<PlayerFinderScreenProps> = ({ embedded = false }) => {
   const { user, userData } = useAuth();
   const navigation = useNavigation<any>();
 
   const [posts, setPosts] = useState<PlayerFinderPost[]>([]);
   const [myRequests, setMyRequests] = useState<PlayerFinderJoinRequest[]>([]);
   const [eligibleBookings, setEligibleBookings] = useState<Booking[]>([]);
+  const [myGroups, setMyGroups] = useState<PlayerGroup[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -46,6 +52,7 @@ const PlayerFinderScreen: React.FC = () => {
 
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
   const [requiredPlayers, setRequiredPlayers] = useState('10');
   const [description, setDescription] = useState('');
   const [creatingPost, setCreatingPost] = useState(false);
@@ -69,20 +76,26 @@ const PlayerFinderScreen: React.FC = () => {
     return statusMap;
   }, [myRequests]);
 
+  const isPostOpenForTeamFeatures = (post: PlayerFinderPost) => {
+    return post.status === 'open' || post.status === 'full';
+  };
+
   const loadData = useCallback(async () => {
     if (!user?.uid) return;
 
     try {
       setLoading(true);
-      const [feed, requests, bookings] = await Promise.all([
+      const [feed, requests, bookings, groups] = await Promise.all([
         getPlayerFinderFeed(),
         getUserJoinRequests(user.uid),
         getEligibleBookingsForPlayerFinder(user.uid),
+        getMyGroups(user.uid),
       ]);
 
       setPosts(feed);
       setMyRequests(requests);
       setEligibleBookings(bookings);
+      setMyGroups(groups);
     } catch (error) {
       console.error('Error loading Player Finder data:', error);
       Alert.alert('Error', 'Failed to load player finder data');
@@ -113,6 +126,7 @@ const PlayerFinderScreen: React.FC = () => {
     }
 
     setSelectedBookingId(eligibleBookings[0].id);
+    setSelectedGroupId('');
     setRequiredPlayers('10');
     setDescription('');
     setCreateModalVisible(true);
@@ -136,6 +150,7 @@ const PlayerFinderScreen: React.FC = () => {
       const result = await createPlayerFinderPost(
         {
           bookingId: selectedBookingId,
+          groupId: selectedGroupId || undefined,
           requiredPlayers: teamSize,
           description,
         },
@@ -192,6 +207,11 @@ const PlayerFinderScreen: React.FC = () => {
   const openManageRequests = async (post: PlayerFinderPost) => {
     if (!user?.uid) return;
 
+    if (!isPostOpenForTeamFeatures(post)) {
+      Alert.alert('Team Closed', 'This booking has expired. Manage requests is no longer available.');
+      return;
+    }
+
     try {
       setSelectedPost(post);
       setManageModalVisible(true);
@@ -247,6 +267,11 @@ const PlayerFinderScreen: React.FC = () => {
   };
 
   const openTeamChat = (post: PlayerFinderPost) => {
+    if (!isPostOpenForTeamFeatures(post)) {
+      Alert.alert('Team Chat Closed', 'This booking has expired. Team chat is no longer available.');
+      return;
+    }
+
     navigation.navigate('PlayerFinderChat', {
       postId: post.id,
       turfName: post.turfName,
@@ -262,8 +287,18 @@ const PlayerFinderScreen: React.FC = () => {
 
   const renderActionButton = (post: PlayerFinderPost) => {
     const isOwnPost = post.createdBy === user?.uid;
+    const canUseTeamFeatures = isPostOpenForTeamFeatures(post);
 
     if (isOwnPost) {
+      if (!canUseTeamFeatures) {
+        return (
+          <View style={[styles.actionButton, styles.fullButton]}>
+            <Ionicons name="checkmark-done-outline" size={16} color="#6b7280" />
+            <Text style={styles.fullButtonText}>Team Closed</Text>
+          </View>
+        );
+      }
+
       return (
         <View style={styles.dualActionRow}>
           <TouchableOpacity
@@ -287,6 +322,15 @@ const PlayerFinderScreen: React.FC = () => {
     const joinStatus = joinStatusByPostId[post.id] || 'none';
 
     if (joinStatus === 'approved') {
+      if (!canUseTeamFeatures) {
+        return (
+          <View style={[styles.actionButton, styles.approvedButton]}>
+            <Ionicons name="checkmark-circle" size={16} color="#065f46" />
+            <Text style={styles.approvedButtonText}>Joined</Text>
+          </View>
+        );
+      }
+
       return (
         <View style={styles.dualActionRow}>
           <View style={[styles.actionButton, styles.approvedButton, styles.halfActionButton]}>
@@ -305,6 +349,15 @@ const PlayerFinderScreen: React.FC = () => {
     }
 
     if (joinStatus === 'pending') {
+      if (!canUseTeamFeatures) {
+        return (
+          <View style={[styles.actionButton, styles.declinedButton]}>
+            <Ionicons name="time-outline" size={16} color="#b91c1c" />
+            <Text style={styles.declinedButtonText}>Request Closed</Text>
+          </View>
+        );
+      }
+
       return (
         <View style={[styles.actionButton, styles.pendingButton]}>
           <Ionicons name="time-outline" size={16} color="#92400e" />
@@ -323,6 +376,7 @@ const PlayerFinderScreen: React.FC = () => {
     }
 
     const disableJoin = post.status !== 'open';
+    const actionLabel = post.status === 'full' ? 'Team Full' : 'Team Closed';
 
     return (
       <TouchableOpacity
@@ -344,7 +398,7 @@ const PlayerFinderScreen: React.FC = () => {
               color={disableJoin ? '#6b7280' : '#ffffff'}
             />
             <Text style={disableJoin ? styles.fullButtonText : styles.joinButtonText}>
-              {disableJoin ? 'Team Full' : 'Request to Join'}
+              {disableJoin ? actionLabel : 'Request to Join'}
             </Text>
           </>
         )}
@@ -382,6 +436,13 @@ const PlayerFinderScreen: React.FC = () => {
           </Text>
         </View>
 
+        {item.inviteScope === 'group' && item.groupName ? (
+          <View style={styles.row}>
+            <Ionicons name="shield-checkmark-outline" size={16} color={colors.primary[600]} />
+            <Text style={[styles.rowText, styles.groupOnlyText]}>Group Only: {item.groupName}</Text>
+          </View>
+        ) : null}
+
         {!!item.description && <Text style={styles.description}>{item.description}</Text>}
 
         <View style={styles.actionRow}>{renderActionButton(item)}</View>
@@ -391,31 +452,49 @@ const PlayerFinderScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
+      <SafeAreaView style={styles.loadingContainer} edges={embedded ? ['left', 'right'] : []}>
         <ActivityIndicator size="large" color={colors.primary[600]} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={[]}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Player Finder</Text>
-          <Text style={styles.headerSubtitle}>Find players for your booking and join open teams</Text>
+    <SafeAreaView style={styles.container} edges={embedded ? ['left', 'right'] : []}>
+      {!embedded ? (
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.headerTitle}>Player Finder</Text>
+            <Text style={styles.headerSubtitle}>Find players for your booking and join open teams</Text>
+          </View>
+          <TouchableOpacity style={styles.postButton} onPress={openCreateModal}>
+            <Ionicons name="add" size={20} color="#ffffff" />
+            <Text style={styles.postButtonText}>Post</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.postButton} onPress={openCreateModal}>
-          <Ionicons name="add" size={20} color="#ffffff" />
-          <Text style={styles.postButtonText}>Post</Text>
-        </TouchableOpacity>
-      </View>
+      ) : null}
 
       <FlatList
         data={posts}
         keyExtractor={(item) => item.id}
         renderItem={renderPostCard}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, embedded && styles.embeddedListContent]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        ListHeaderComponent={
+          embedded ? (
+            <View style={styles.embeddedToolbar}>
+              <View style={styles.embeddedToolbarCopy}>
+                <Text style={styles.embeddedToolbarTitle}>Find Players</Text>
+                <Text style={styles.embeddedToolbarSubtitle}>
+                  Join open teams or post from your confirmed booking.
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.embeddedPostButton} onPress={openCreateModal}>
+                <Ionicons name="add" size={18} color="#ffffff" />
+                <Text style={styles.embeddedPostButtonText}>Post</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="people-outline" size={56} color={colors.gray[300]} />
@@ -471,6 +550,63 @@ const PlayerFinderScreen: React.FC = () => {
           placeholder="Example: Need 3 players for evening football."
           placeholderTextColor={colors.gray[400]}
         />
+
+        <Text style={styles.modalLabel}>Invite Scope</Text>
+        <View style={styles.scopeRow}>
+          <TouchableOpacity
+            style={[styles.scopeOption, !selectedGroupId && styles.scopeOptionSelected]}
+            onPress={() => setSelectedGroupId('')}
+          >
+            <Text style={[styles.scopeOptionText, !selectedGroupId && styles.scopeOptionTextSelected]}>
+              Public Team
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.scopeOption,
+              selectedGroupId ? styles.scopeOptionSelected : undefined,
+              myGroups.length === 0 ? styles.scopeOptionDisabled : undefined,
+            ]}
+            onPress={() => {
+              if (myGroups.length > 0) {
+                setSelectedGroupId(myGroups[0].id);
+              }
+            }}
+            disabled={myGroups.length === 0}
+          >
+            <Text
+              style={[
+                styles.scopeOptionText,
+                selectedGroupId ? styles.scopeOptionTextSelected : undefined,
+                myGroups.length === 0 ? styles.scopeOptionTextDisabled : undefined,
+              ]}
+            >
+              Group Only
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {selectedGroupId ? (
+          <View style={styles.groupPickerContainer}>
+            {myGroups.map((group) => {
+              const isSelected = selectedGroupId === group.id;
+              return (
+                <TouchableOpacity
+                  key={group.id}
+                  style={[styles.groupOption, isSelected && styles.groupOptionSelected]}
+                  onPress={() => setSelectedGroupId(group.id)}
+                >
+                  <Text style={[styles.groupOptionTitle, isSelected && styles.groupOptionTitleSelected]}>
+                    {group.name}
+                  </Text>
+                  <Text style={[styles.groupOptionSubtitle, isSelected && styles.groupOptionSubtitleSelected]}>
+                    {group.memberCount || group.memberIds.length} members
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : null}
 
         <TouchableOpacity
           style={[styles.createButton, creatingPost && styles.actionButtonDisabled]}
@@ -587,6 +723,49 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: 110,
   },
+  embeddedListContent: {
+    paddingTop: spacing.md,
+  },
+  embeddedToolbar: {
+    marginBottom: spacing.md,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.gray[200],
+    backgroundColor: '#ffffff',
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  embeddedToolbarCopy: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  embeddedToolbarTitle: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+    color: colors.gray[900],
+  },
+  embeddedToolbarSubtitle: {
+    marginTop: 2,
+    color: colors.gray[600],
+    fontSize: typography.fontSize.sm,
+  },
+  embeddedPostButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.primary[600],
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  embeddedPostButtonText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: typography.fontSize.sm,
+  },
   postCard: {
     marginBottom: spacing.md,
   },
@@ -619,6 +798,10 @@ const styles = StyleSheet.create({
   rowText: {
     color: colors.gray[700],
     fontSize: typography.fontSize.sm,
+  },
+  groupOnlyText: {
+    color: colors.primary[700],
+    fontWeight: '600',
   },
   description: {
     marginTop: spacing.xs,
@@ -761,6 +944,67 @@ const styles = StyleSheet.create({
   textArea: {
     minHeight: 84,
     textAlignVertical: 'top',
+  },
+  scopeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  scopeOption: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.gray[300],
+    borderRadius: borderRadius.md,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+  },
+  scopeOptionSelected: {
+    borderColor: colors.primary[600],
+    backgroundColor: '#f0fdf4',
+  },
+  scopeOptionDisabled: {
+    backgroundColor: colors.gray[100],
+  },
+  scopeOptionText: {
+    color: colors.gray[700],
+    fontWeight: '600',
+  },
+  scopeOptionTextSelected: {
+    color: colors.primary[700],
+  },
+  scopeOptionTextDisabled: {
+    color: colors.gray[400],
+  },
+  groupPickerContainer: {
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  groupOption: {
+    borderWidth: 1,
+    borderColor: colors.gray[200],
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    backgroundColor: '#ffffff',
+  },
+  groupOptionSelected: {
+    borderColor: colors.primary[600],
+    backgroundColor: '#f0fdf4',
+  },
+  groupOptionTitle: {
+    color: colors.gray[900],
+    fontWeight: '700',
+  },
+  groupOptionTitleSelected: {
+    color: colors.primary[700],
+  },
+  groupOptionSubtitle: {
+    color: colors.gray[600],
+    marginTop: 2,
+    fontSize: typography.fontSize.sm,
+  },
+  groupOptionSubtitleSelected: {
+    color: colors.primary[700],
   },
   createButton: {
     marginTop: spacing.lg,

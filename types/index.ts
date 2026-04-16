@@ -7,13 +7,14 @@ export interface RootStackParamList extends Record<string, any> {
   TurfDetail: { id: string };
   Admin: undefined;
   Owner: undefined;
+  GroupDetail: { groupId: string };
+  ReviewsGiven: undefined;
 }
 
 export interface MainTabParamList {
   Home: undefined;
   Bookings: undefined;
-  PlayerFinder: undefined;
-  Explore: undefined;
+  Players: undefined;
   Profile: undefined;
 }
 
@@ -54,6 +55,11 @@ export interface User {
   businessName?: string;
   phone?: string;
   razorpayAccountId?: string;
+  profileAchievements?: {
+    firstMatchUnlocked?: boolean;
+    fiveMatchesUnlocked?: boolean;
+    tenMatchesUnlocked?: boolean;
+  };
 }
 
 export interface Location {
@@ -132,6 +138,7 @@ export interface Booking {
   turfName: string;
   turfImage: string;
   turfLocation: Location;
+  sport?: TurfSport;
   date: string;
   startTime: string;
   endTime: string;
@@ -145,6 +152,9 @@ export interface Booking {
   requestedSpiritPoints?: number;
   redeemedSpiritPoints?: number;
   createdAt: Date;
+  completedAt?: Date;
+  hasReview?: boolean;
+  reviewId?: string;
   cancelledAt?: Date;
   cancelledBy?: 'user' | 'owner' | 'admin';
   refundDetails?: RefundDetails;
@@ -176,10 +186,67 @@ export interface PlayerFinderPost {
   requiredPlayers: number;
   currentPlayers: number;
   status: PlayerFinderPostStatus;
+  inviteScope?: 'public' | 'group';
+  groupId?: string;
+  groupName?: string;
   participants: PlayerParticipant[];
   description?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export type GroupInvitationStatus = 'pending' | 'accepted' | 'declined';
+
+export interface PlayerGroupMember {
+  userId: string;
+  name: string;
+  role: 'owner' | 'member';
+  joinedAt: Date;
+  photoURL?: string | null;
+  email?: string | null;
+}
+
+export interface PlayerGroup {
+  id: string;
+  name: string;
+  description?: string;
+  sports?: TurfSport[];
+  createdBy: string;
+  createdByName: string;
+  memberIds: string[];
+  members: PlayerGroupMember[];
+  memberCount: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface GroupInvitation {
+  id: string;
+  groupId: string;
+  groupName: string;
+  groupOwnerId: string;
+  invitedBy: string;
+  invitedByName: string;
+  invitedUserId: string;
+  invitedUserEmail: string;
+  status: GroupInvitationStatus;
+  createdAt: Date;
+  updatedAt?: Date;
+  respondedAt?: Date;
+}
+
+export interface TurfReview {
+  id: string;
+  bookingId: string;
+  turfId: string;
+  turfName: string;
+  userId: string;
+  userName: string;
+  rating: number;
+  comment?: string;
+  createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface PlayerFinderBookingSnapshot {

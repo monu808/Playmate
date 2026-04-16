@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { Modal } from './ui';
 import { Ionicons } from '@expo/vector-icons';
+import { getFunctions, httpsCallable } from '@react-native-firebase/functions/lib/modular';
 import { format } from 'date-fns';
 import {
   calculateBookingBaseAmount,
@@ -57,6 +58,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [showOffers, setShowOffers] = useState(false);
   const [rewardCode, setRewardCode] = useState('');
   const [requestedSpiritPoints, setRequestedSpiritPoints] = useState(0);
   const [availableSpiritPoints, setAvailableSpiritPoints] = useState(0);
@@ -113,6 +115,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
       setStartTime(null);
       setEndTime(null);
       setAgreedToTerms(false);
+      setShowOffers(false);
       setRewardCode('');
       setRequestedSpiritPoints(0);
       setQuoteError('');
@@ -177,30 +180,35 @@ const BookingModal: React.FC<BookingModalProps> = ({
     setEndTime(time);
   }, [startTime]);
 
-  const isValidTimeRange = () => {
-    if (!startTime || !endTime) return true;
-    
-    // ✅ FIXED: Check every 30-minute slot in the range (not just hourly)
-    // Convert times to total minutes for accurate 30-minute interval checking
+  const timeRangeValid = useMemo(() => {
+    if (!startTime || !endTime) {
+      return true;
+    }
+
+    // Check every 30-minute slot in the range.
     const [startHour, startMin] = startTime.split(':').map(Number);
     const [endHour, endMin] = endTime.split(':').map(Number);
-    
+
     const startMinutes = startHour * 60 + startMin;
     const endMinutes = endHour * 60 + endMin;
-    
-    // Check each 30-minute slot in the range
+
     for (let minutes = startMinutes; minutes < endMinutes; minutes += 30) {
       const hour = Math.floor(minutes / 60);
       const minute = minutes % 60;
       const checkTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-      
-      if (isTimeSlotBooked(checkTime)) {
+
+      const isBooked = bookedSlots.some((slot) => {
+        const [bookedStart, bookedEnd] = slot.split('-');
+        return checkTime >= bookedStart && checkTime < bookedEnd;
+      });
+
+      if (isBooked) {
         return false;
       }
     }
-    
+
     return true;
-  };
+  }, [startTime, endTime, bookedSlots]);
 
   const setPointsByRatio = useCallback((ratio: number) => {
     const safeAvailablePoints = Math.max(0, availableSpiritPoints);
@@ -268,13 +276,34 @@ const BookingModal: React.FC<BookingModalProps> = ({
     requestedSpiritPoints,
   ]);
 
+  useEffect(() => {
+    if (!visible || !user || !startTime || !endTime || !timeRangeValid) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      refreshPricingQuote();
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [
+    visible,
+    user,
+    startTime,
+    endTime,
+    rewardCode,
+    requestedSpiritPoints,
+    timeRangeValid,
+    refreshPricingQuote,
+  ]);
+
   const handlePayment = async () => {
     if (!startTime || !endTime) {
       Alert.alert('Error', 'Please select both start and end time');
       return;
     }
 
-    if (!isValidTimeRange()) {
+    if (!timeRangeValid) {
       Alert.alert('Error', 'Some slots in the selected time range are already booked');
       return;
     }
@@ -332,8 +361,6 @@ const BookingModal: React.FC<BookingModalProps> = ({
     console.log('✅ Payment received. Processing...');
 
     try {
-      const { functions } = await import('../config/firebase');
-
       // Prepare booking data
       const bookingData = {
         userId: user!.uid,
@@ -356,8 +383,10 @@ const BookingModal: React.FC<BookingModalProps> = ({
         createdAt: new Date(),
       };
 
+      const functionsInstance = getFunctions();
+
       // Verify payment
-      const verifyPaymentById = functions.httpsCallable('verifyPaymentById');
+      const verifyPaymentById = httpsCallable(functionsInstance, 'verifyPaymentById');
       const response = await verifyPaymentById({
         razorpay_payment_id: paymentData.razorpay_payment_id,
         expectedAmount: currentBreakdown.totalAmount,
@@ -367,7 +396,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
       console.log('✅ Payment verified:', verificationResult);
 
       // Create booking
-      const createVerifiedBooking = functions.httpsCallable('createVerifiedBooking');
+      const createVerifiedBooking = httpsCallable(functionsInstance, 'createVerifiedBooking');
       const bookingResponse = await createVerifiedBooking({
         bookingData: {
           ...bookingData,
@@ -681,7 +710,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
             </View>
           )}
 
-          {!isValidTimeRange() && startTime && endTime && (
+          {!timeRangeValid && startTime && endTime && (
             <View style={styles.warningBox}>
               <Ionicons name="warning" size={18} color="#f59e0b" />
               <Text style={styles.warningText}>
@@ -692,110 +721,93 @@ const BookingModal: React.FC<BookingModalProps> = ({
         </View>
 
         {/* Offers & Spirit Points */}
-        {startTime && endTime && isValidTimeRange() && (
+        {startTime && endTime && timeRangeValid && (
           <View style={styles.section}>
-            <View style={styles.offerHeaderRow}>
+            <TouchableOpacity
+              style={styles.breakdownHeader}
+              onPress={() => setShowOffers(!showOffers)}
+            >
               <Text style={styles.sectionTitle}>Offers & Spirit Points</Text>
-              {quoteLoading && <ActivityIndicator size="small" color="#16a34a" />}
-            </View>
-
-            <View style={styles.offerCard}>
-              <Text style={styles.offerLabel}>Milestone Reward Code</Text>
-              <TextInput
-                style={styles.offerInput}
-                placeholder="Enter your reward code"
-                placeholderTextColor="#9ca3af"
-                autoCapitalize="characters"
-                value={rewardCode}
-                onChangeText={setRewardCode}
-              />
-
-              <View style={styles.pointsHeaderRow}>
-                <Text style={styles.offerLabel}>Spirit Points</Text>
-                <Text style={styles.pointsMetaText}>
-                  Available: {availableSpiritPoints}
-                </Text>
+              <View style={styles.offerHeaderActions}>
+                {quoteLoading && <ActivityIndicator size="small" color="#16a34a" />}
+                <Ionicons
+                  name={showOffers ? 'chevron-up' : 'chevron-down'}
+                  size={22}
+                  color="#111827"
+                />
               </View>
+            </TouchableOpacity>
 
-              <View style={styles.pointsSliderContainer}>
-                <View
-                  style={styles.pointsSliderTrack}
-                  onLayout={(event) => setSliderTrackWidth(event.nativeEvent.layout.width)}
-                  onStartShouldSetResponder={() => true}
-                  onResponderGrant={(event) => handleSpiritSliderTouch(event.nativeEvent.locationX)}
-                  onResponderMove={(event) => handleSpiritSliderTouch(event.nativeEvent.locationX)}
-                >
-                  <View
-                    style={[
-                      styles.pointsSliderFill,
-                      {
-                        width:
-                          availableSpiritPoints > 0
-                            ? `${Math.min(100, (requestedSpiritPoints / availableSpiritPoints) * 100)}%`
-                            : '0%',
-                      },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.pointsSliderThumb,
-                      {
-                        left:
-                          availableSpiritPoints > 0
-                            ? `${Math.min(100, (requestedSpiritPoints / availableSpiritPoints) * 100)}%`
-                            : '0%',
-                      },
-                    ]}
-                  />
-                </View>
-                <View style={styles.pointsScaleRow}>
-                  <Text style={styles.pointsScaleText}>0</Text>
-                  <Text style={styles.pointsScaleText}>{availableSpiritPoints}</Text>
-                </View>
-              </View>
+            {showOffers && (
+              <View style={styles.offerCard}>
+                <Text style={styles.offerLabel}>Milestone Reward Code</Text>
+                <TextInput
+                  style={styles.offerInput}
+                  placeholder="Enter your reward code"
+                  placeholderTextColor="#9ca3af"
+                  autoCapitalize="characters"
+                  value={rewardCode}
+                  onChangeText={setRewardCode}
+                />
 
-              <View style={styles.pointsValueRow}>
-                <TouchableOpacity
-                  style={styles.pointsStepperButton}
-                  onPress={() => setRequestedSpiritPoints((prev) => Math.max(0, prev - 5))}
-                >
-                  <Ionicons name="remove" size={16} color="#111827" />
-                </TouchableOpacity>
+                <View style={styles.pointsHeaderRow}>
+                  <Text style={styles.offerLabel}>Spirit Points</Text>
+                  <Text style={styles.pointsMetaText}>
+                    Available: {availableSpiritPoints}
+                  </Text>
+                </View>
+
+                <View style={styles.pointsSliderContainer}>
+                  <View
+                    style={styles.pointsSliderTrack}
+                    onLayout={(event) => setSliderTrackWidth(event.nativeEvent.layout.width)}
+                    onStartShouldSetResponder={() => true}
+                    onResponderGrant={(event) => handleSpiritSliderTouch(event.nativeEvent.locationX)}
+                    onResponderMove={(event) => handleSpiritSliderTouch(event.nativeEvent.locationX)}
+                  >
+                    <View
+                      style={[
+                        styles.pointsSliderFill,
+                        {
+                          width:
+                            availableSpiritPoints > 0
+                              ? `${Math.min(100, (requestedSpiritPoints / availableSpiritPoints) * 100)}%`
+                              : '0%',
+                        },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.pointsSliderThumb,
+                        {
+                          left:
+                            availableSpiritPoints > 0
+                              ? `${Math.min(100, (requestedSpiritPoints / availableSpiritPoints) * 100)}%`
+                              : '0%',
+                        },
+                      ]}
+                    />
+                  </View>
+                  <View style={styles.pointsScaleRow}>
+                    <Text style={styles.pointsScaleText}>0</Text>
+                    <Text style={styles.pointsScaleText}>{availableSpiritPoints}</Text>
+                  </View>
+                </View>
+
                 <Text style={styles.pointsSelectedText}>{requestedSpiritPoints} points</Text>
-                <TouchableOpacity
-                  style={styles.pointsStepperButton}
-                  onPress={() =>
-                    setRequestedSpiritPoints((prev) =>
-                      Math.min(availableSpiritPoints, prev + 5)
-                    )
-                  }
-                >
-                  <Ionicons name="add" size={16} color="#111827" />
-                </TouchableOpacity>
-              </View>
 
-              <Text style={styles.pointsValueHint}>
-                Approx discount value: {formatCurrency(requestedSpiritPoints * 0.5)}
-              </Text>
-
-              {quoteError ? <Text style={styles.quoteErrorText}>{quoteError}</Text> : null}
-
-              <TouchableOpacity
-                style={styles.refreshQuoteButton}
-                onPress={refreshPricingQuote}
-                disabled={quoteLoading}
-              >
-                <Ionicons name="sparkles-outline" size={16} color="#ffffff" />
-                <Text style={styles.refreshQuoteText}>
-                  {quoteLoading ? 'Refreshing...' : 'Refresh Final Price'}
+                <Text style={styles.pointsValueHint}>
+                  Approx discount value: {formatCurrency(requestedSpiritPoints * 0.5)}
                 </Text>
-              </TouchableOpacity>
-            </View>
+
+                {quoteError ? <Text style={styles.quoteErrorText}>{quoteError}</Text> : null}
+              </View>
+            )}
           </View>
         )}
 
         {/* Payment Breakdown - COLLAPSIBLE */}
-        {startTime && endTime && isValidTimeRange() && (
+        {startTime && endTime && timeRangeValid && (
           <View style={styles.section}>
             <TouchableOpacity 
               style={styles.breakdownHeader}
@@ -850,25 +862,6 @@ const BookingModal: React.FC<BookingModalProps> = ({
                     {formatCurrency(effectiveBreakdown.totalAmount)}
                   </Text>
                 </View>
-                
-                {/* Owner vs Platform Share Info */}
-                <View style={styles.shareInfoBox}>
-                  <Text style={styles.shareInfoTitle}>Payment Distribution</Text>
-                  <View style={styles.shareRow}>
-                    <View style={styles.shareItem}>
-                      <Text style={styles.shareLabel}>Turf Owner Gets</Text>
-                      <Text style={styles.shareValue}>
-                        {formatCurrency(effectiveBreakdown.ownerShare)}
-                      </Text>
-                    </View>
-                    <View style={styles.shareItem}>
-                      <Text style={styles.shareLabel}>Platform Gets</Text>
-                      <Text style={styles.shareValue}>
-                        {formatCurrency(effectiveBreakdown.platformShare)}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
               </View>
             )}
           </View>
@@ -895,11 +888,11 @@ const BookingModal: React.FC<BookingModalProps> = ({
         <TouchableOpacity
           style={[
             styles.bookButton,
-            (!startTime || !endTime || !agreedToTerms || loading || !isValidTimeRange()) &&
+            (!startTime || !endTime || !agreedToTerms || loading || !timeRangeValid) &&
               styles.bookButtonDisabled,
           ]}
           onPress={handlePayment}
-          disabled={!startTime || !endTime || !agreedToTerms || loading || !isValidTimeRange()}
+          disabled={!startTime || !endTime || !agreedToTerms || loading || !timeRangeValid}
         >
           {loading ? (
             <ActivityIndicator color="#ffffff" />
@@ -1091,11 +1084,10 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     marginTop: 8,
   },
-  offerHeaderRow: {
+  offerHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    gap: 8,
   },
   offerCard: {
     backgroundColor: '#f8fafc',
@@ -1163,27 +1155,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748b',
   },
-  pointsValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    marginTop: 2,
-  },
-  pointsStepperButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-  },
   pointsSelectedText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#0f172a',
+    textAlign: 'center',
   },
   pointsValueHint: {
     fontSize: 12,
@@ -1194,21 +1170,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#dc2626',
     fontWeight: '500',
-  },
-  refreshQuoteButton: {
-    marginTop: 4,
-    backgroundColor: '#16a34a',
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  refreshQuoteText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
   },
   breakdownRow: {
     flexDirection: 'row',
@@ -1248,37 +1209,6 @@ const styles = StyleSheet.create({
   },
   breakdownValueTotal: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#16a34a',
-  },
-  shareInfoBox: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: '#f0fdf4',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-  },
-  shareInfoTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#15803d',
-    marginBottom: 8,
-  },
-  shareRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  shareItem: {
-    flex: 1,
-  },
-  shareLabel: {
-    fontSize: 11,
-    color: '#15803d',
-    marginBottom: 2,
-  },
-  shareValue: {
-    fontSize: 14,
     fontWeight: '700',
     color: '#16a34a',
   },

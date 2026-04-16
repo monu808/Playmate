@@ -24,6 +24,8 @@ interface DashboardStats {
   monthRevenue: number;
   totalRevenue: number;
   totalBookings: number;
+  totalReviews: number;
+  averageRating: number;
 }
 
 export default function OwnerDashboardScreen({ navigation }: any) {
@@ -38,6 +40,8 @@ export default function OwnerDashboardScreen({ navigation }: any) {
     monthRevenue: 0,
     totalRevenue: 0,
     totalBookings: 0,
+    totalReviews: 0,
+    averageRating: 0,
   });
 
   useEffect(() => {
@@ -59,6 +63,8 @@ export default function OwnerDashboardScreen({ navigation }: any) {
         monthRevenue: ownerStats.revenue.thisMonth,
         totalRevenue: ownerStats.revenue.total,
         totalBookings: ownerStats.bookings.total,
+        totalReviews: ownerStats.reviews?.total || 0,
+        averageRating: ownerStats.reviews?.average || 0,
       });
     } catch (error) {
       console.error('Error loading dashboard stats:', error);
@@ -208,6 +214,24 @@ export default function OwnerDashboardScreen({ navigation }: any) {
               </View>
               <Text style={styles.statValue}>{stats.totalBookings}</Text>
               <Text style={styles.statLabel}>Total</Text>
+            </View>
+          </View>
+
+          <View style={styles.reviewInsightCard}>
+            <View style={styles.reviewMetric}>
+              <Ionicons name="star" size={18} color="#f59e0b" />
+              <Text style={styles.reviewMetricLabel}>Avg Rating</Text>
+              <Text style={styles.reviewMetricValue}>
+                {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : '0.0'}
+              </Text>
+            </View>
+
+            <View style={styles.reviewDivider} />
+
+            <View style={styles.reviewMetric}>
+              <Ionicons name="chatbubble-ellipses-outline" size={18} color="#16a34a" />
+              <Text style={styles.reviewMetricLabel}>Reviews</Text>
+              <Text style={styles.reviewMetricValue}>{stats.totalReviews}</Text>
             </View>
           </View>
         </View>
@@ -397,6 +421,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginHorizontal: -spacing.xs,
+  },
+  reviewInsightCard: {
+    marginTop: spacing.xs,
+    borderRadius: borderRadius.xl,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: colors.gray[200],
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reviewMetric: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flex: 1,
+  },
+  reviewMetricLabel: {
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
+    marginLeft: 2,
+  },
+  reviewMetricValue: {
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
+    marginLeft: 'auto',
+  },
+  reviewDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: colors.gray[200],
+    marginHorizontal: spacing.md,
   },
   statCard: {
     width: '48%',

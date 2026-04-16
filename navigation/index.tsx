@@ -15,11 +15,13 @@ import { OnboardingScreen } from '../components/OnboardingScreen';
 import HomeScreen from '../screens/HomeScreen';
 import TurfDetailScreen from '../screens/TurfDetailScreen';
 import BookingsScreen from '../screens/BookingsScreen';
-import PlayerFinderScreen from '../screens/PlayerFinderScreen';
 import PlayerFinderChatScreen from '../screens/PlayerFinderChatScreen';
 import BookingDetailScreen from '../screens/BookingDetailScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import PaymentHistoryScreen from '../screens/PaymentHistoryScreen';
+import PlayersHubScreen from '../screens/PlayersHubScreen';
+import GroupDetailScreen from '../screens/GroupDetailScreen';
+import ReviewsGivenScreen from '../screens/ReviewsGivenScreen';
 
 // Auth Screens
 import LoginScreen from '../screens/Auth/LoginScreen';
@@ -47,6 +49,7 @@ import OwnerBookingsScreen from '../screens/Owner/OwnerBookingsScreen';
 import OwnerScanQRScreen from '../screens/Owner/OwnerScanQRScreen';
 import ManageSlotsScreen from '../screens/Owner/ManageSlotsScreen';
 import EditOwnerTurfPricingScreen from '../screens/Owner/EditTurfPricingScreen';
+import { BookingReviewPrompt } from '../components/BookingReviewPrompt';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -61,6 +64,8 @@ export type RootStackParamList = {
   OwnerScanQR: undefined;
   ManageSlots: undefined;
   OwnerEditTurfPricing: { turfId: string };
+  GroupDetail: { groupId: string };
+  ReviewsGiven: undefined;
 };
 
 export type AuthStackParamList = {
@@ -73,7 +78,7 @@ export type AuthStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Bookings: undefined;
-  PlayerFinder: undefined;
+  Players: undefined;
   Profile: undefined;
 };
 
@@ -199,8 +204,8 @@ function MainTabs() {
             iconName = focused ? 'home' : 'home-outline';
           } else if (route.name === 'Bookings') {
             iconName = focused ? 'calendar' : 'calendar-outline';
-          } else if (route.name === 'PlayerFinder') {
-            iconName = focused ? 'people' : 'people-outline';
+          } else if (route.name === 'Players') {
+            iconName = focused ? 'people-circle' : 'people-circle-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           } else {
@@ -217,8 +222,8 @@ function MainTabs() {
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Bookings" component={BookingsScreen} />
       <Tab.Screen
-        name="PlayerFinder"
-        component={PlayerFinderScreen}
+        name="Players"
+        component={PlayersHubScreen}
         options={{ tabBarLabel: 'Players' }}
       />
       <Tab.Screen name="Profile" component={ProfileScreen} />
@@ -408,7 +413,27 @@ export default function Navigation() {
             options={{ headerShown: false }}
           />
         )}
+
+        {isAuthenticated && (
+          <Stack.Screen
+            name="GroupDetail"
+            component={GroupDetailScreen}
+            options={{ headerShown: false }}
+          />
+        )}
+
+        {isAuthenticated && (
+          <Stack.Screen
+            name="ReviewsGiven"
+            component={ReviewsGivenScreen}
+            options={{ headerShown: false }}
+          />
+        )}
       </Stack.Navigator>
+
+      {isAuthenticated && role === 'user' && user?.uid ? (
+        <BookingReviewPrompt userId={user.uid} />
+      ) : null}
     </NavigationContainer>
   );
 }

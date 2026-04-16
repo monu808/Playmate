@@ -1,6 +1,7 @@
 // Firebase Firestore Functions
 import firestore from '@react-native-firebase/firestore';
-import { db, functions } from '../../config/firebase';
+import { getFunctions, httpsCallable } from '@react-native-firebase/functions/lib/modular';
+import { db } from '../../config/firebase';
 import {
   DEFAULT_HAPPY_HOUR_DISCOUNT_PERCENT,
   DEFAULT_HAPPY_HOUR_ENABLED,
@@ -23,6 +24,9 @@ import {
   PlayerFinderPost,
   PlayerFinderPostStatus,
   PlayerJoinRequestStatus,
+  PlayerGroup,
+  GroupInvitation,
+  TurfReview,
 } from '../../types';
 
 // Type alias for Firestore Timestamp
@@ -32,6 +36,14 @@ const toDate = (value: any): Date => {
   if (value?.toDate) return value.toDate();
   if (value instanceof Date) return value;
   return new Date();
+};
+
+const functionsInstance = getFunctions();
+
+const callHttpsFunction = async (name: string, payload?: any): Promise<any> => {
+  const callable = httpsCallable(functionsInstance, name);
+  const response = await callable(payload);
+  return response?.data;
 };
 
 const sortByCreatedAtDesc = <T extends { createdAt?: Date }>(items: T[]) => {
@@ -440,9 +452,7 @@ export const calculateBookingPricing = async (
   input: BookingPricingCalculationInput
 ): Promise<BookingPricingCalculationResult> => {
   try {
-    const callable = functions.httpsCallable('calculateBookingPricing');
-    const response = await callable(input);
-    const data = response.data as any;
+    const data = (await callHttpsFunction('calculateBookingPricing', input)) as any;
 
     return {
       success: true,
@@ -471,9 +481,8 @@ export const cancelBookingWithRefund = async (
   bookingId: string
 ): Promise<CancelBookingWithRefundResult> => {
   try {
-    const callable = functions.httpsCallable('cancelBookingWithRefund');
-    const response = await callable({ bookingId });
-    return response.data as CancelBookingWithRefundResult;
+    const data = await callHttpsFunction('cancelBookingWithRefund', { bookingId });
+    return data as CancelBookingWithRefundResult;
   } catch (error: any) {
     console.error('❌ Cancel booking with refund error:', error);
     return {
@@ -795,6 +804,7 @@ export interface CreatePlayerFinderPostInput {
   bookingId: string;
   requiredPlayers: number;
   description?: string;
+  groupId?: string;
 }
 
 export interface JoinPlayerFinderInput {
@@ -805,8 +815,41 @@ export interface JoinPlayerFinderInput {
   userPhotoURL?: string | null;
 }
 
+const getBookingDateTime = (date?: string, time?: string): Date | null => {
+  if (!date || !time) return null;
+  const parsed = new Date(`${date}T${time}:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+};
+
+const hasBookingExpired = (booking: any): boolean => {
+  const endDate = getBookingDateTime(booking?.date, booking?.endTime || booking?.startTime);
+  if (!endDate) return false;
+  return endDate.getTime() <= Date.now();
+};
+
+const resolvePlayerFinderPostStatus = (post: any): PlayerFinderPostStatus => {
+  const rawStatus = (post?.status || 'open') as PlayerFinderPostStatus;
+
+  if (rawStatus === 'cancelled' || rawStatus === 'completed') {
+    return rawStatus;
+  }
+
+  if (hasBookingExpired(post)) {
+    return 'completed';
+  }
+
+  return rawStatus === 'full' ? 'full' : 'open';
+};
+
+const isPlayerFinderPostOpenForTeamFeatures = (post: any): boolean => {
+  const resolvedStatus = resolvePlayerFinderPostStatus(post);
+  return resolvedStatus === 'open' || resolvedStatus === 'full';
+};
+
 const mapPlayerFinderPost = (doc: any): PlayerFinderPost => {
   const data = doc.data() || {};
+  const resolvedStatus = resolvePlayerFinderPostStatus(data);
 
   return {
     id: doc.id,
@@ -823,7 +866,10 @@ const mapPlayerFinderPost = (doc: any): PlayerFinderPost => {
     endTime: data.endTime || '',
     requiredPlayers: Number(data.requiredPlayers || 0),
     currentPlayers: Number(data.currentPlayers || 0),
-    status: (data.status || 'open') as PlayerFinderPostStatus,
+    status: resolvedStatus,
+    inviteScope: data.inviteScope === 'group' ? 'group' : 'public',
+    groupId: data.groupId || undefined,
+    groupName: data.groupName || undefined,
     participants: Array.isArray(data.participants)
       ? data.participants.map((participant: any) => ({
           userId: participant?.userId || '',
@@ -897,8 +943,8 @@ const buildBookingSnapshotFromPost = (post: any): PlayerFinderBookingSnapshot =>
 });
 
 const isUpcomingBooking = (booking: any): boolean => {
-  const startDate = new Date(`${booking?.date || ''}T${booking?.startTime || '00:00'}:00`);
-  if (Number.isNaN(startDate.getTime())) return false;
+  const startDate = getBookingDateTime(booking?.date, booking?.startTime || '00:00');
+  if (!startDate) return false;
   return startDate.getTime() > Date.now();
 };
 
@@ -910,6 +956,11 @@ const isUserAllowedInPlayerFinderChat = async (postId: string, userId: string): 
     if (!postSnap.exists()) return false;
 
     const postData = postSnap.data() as any;
+
+    if (!isPlayerFinderPostOpenForTeamFeatures(postData)) {
+      return false;
+    }
+
     if (postData?.createdBy === userId) {
       return true;
     }
@@ -944,7 +995,8 @@ export const getPlayerFinderFeed = async (): Promise<PlayerFinderPost[]> => {
         .get();
     }
 
-    return sortByCreatedAtDesc(snapshot.docs.map(mapPlayerFinderPost));
+    const posts = sortByCreatedAtDesc(snapshot.docs.map(mapPlayerFinderPost));
+    return posts.filter((post) => post.status === 'open' || post.status === 'full');
   } catch (error) {
     console.error('❌ Get player finder feed error:', error);
     return [];
@@ -1023,6 +1075,16 @@ export const getPendingJoinRequestsForPost = async (
   hostUserId: string
 ): Promise<PlayerFinderJoinRequest[]> => {
   try {
+    const postSnap = await db.collection('playerFinderPosts').doc(postId).get();
+    if (!postSnap.exists()) {
+      return [];
+    }
+
+    const postData = postSnap.data() as any;
+    if (postData?.createdBy !== hostUserId || !isPlayerFinderPostOpenForTeamFeatures(postData)) {
+      return [];
+    }
+
     let snapshot;
 
     try {
@@ -1125,6 +1187,30 @@ export const createPlayerFinderPost = async (
       console.log('ℹ️ Could not fetch turf sport, using fallback sport.');
     }
 
+    let inviteScope: 'public' | 'group' = 'public';
+    let groupId: string | null = null;
+    let groupName: string | null = null;
+
+    if (input.groupId) {
+      const groupSnap = await db.collection('groups').doc(input.groupId).get();
+      if (!groupSnap.exists()) {
+        return { success: false, error: 'Selected group was not found' };
+      }
+
+      const groupData = groupSnap.data() as any;
+      const memberIds: string[] = Array.isArray(groupData?.memberIds)
+        ? groupData.memberIds.map((entry: unknown) => String(entry || ''))
+        : [];
+
+      if (!memberIds.includes(currentUser.uid)) {
+        return { success: false, error: 'You can only use groups you are a member of' };
+      }
+
+      inviteScope = 'group';
+      groupId = groupSnap.id;
+      groupName = String(groupData?.name || 'Group');
+    }
+
     const postRef = db.collection('playerFinderPosts').doc();
     const joinedAt = firestore.Timestamp.now();
 
@@ -1143,6 +1229,9 @@ export const createPlayerFinderPost = async (
       requiredPlayers,
       currentPlayers: 1,
       status: 'open',
+      inviteScope,
+      groupId,
+      groupName,
       description: input.description?.trim() || '',
       participants: [
         {
@@ -1180,8 +1269,28 @@ export const requestToJoinPlayerFinderPost = async (
       return { success: false, error: 'You are already the host for this team' };
     }
 
+    if (!isPlayerFinderPostOpenForTeamFeatures(post)) {
+      return { success: false, error: 'This team is no longer accepting requests' };
+    }
+
     if (post.status !== 'open') {
       return { success: false, error: post.status === 'full' ? 'Team is already full' : 'Team is not accepting requests' };
+    }
+
+    if (post.inviteScope === 'group' && post.groupId) {
+      const groupSnap = await db.collection('groups').doc(post.groupId).get();
+      if (!groupSnap.exists()) {
+        return { success: false, error: 'This team group is no longer available' };
+      }
+
+      const groupData = groupSnap.data() as any;
+      const memberIds: string[] = Array.isArray(groupData?.memberIds)
+        ? groupData.memberIds.map((entry: unknown) => String(entry || ''))
+        : [];
+
+      if (!memberIds.includes(input.userId)) {
+        return { success: false, error: 'Only members of the selected group can join this team' };
+      }
     }
 
     const participants = Array.isArray(post.participants) ? post.participants : [];
@@ -1254,12 +1363,36 @@ export const approvePlayerJoinRequest = async (
         return { success: false, error: 'Only the host can approve requests' };
       }
 
+      if (!isPlayerFinderPostOpenForTeamFeatures(postData)) {
+        transaction.update(requestRef, {
+          status: 'declined',
+          respondedAt: firestore.FieldValue.serverTimestamp(),
+        });
+        return { success: false, error: 'Team is no longer accepting requests right now' };
+      }
+
       if (postData.status !== 'open') {
         transaction.update(requestRef, {
           status: 'declined',
           respondedAt: firestore.FieldValue.serverTimestamp(),
         });
         return { success: false, error: 'Team is not accepting requests right now' };
+      }
+
+      if (postData.inviteScope === 'group' && postData.groupId) {
+        const groupRef = db.collection('groups').doc(String(postData.groupId));
+        const groupSnap = await transaction.get(groupRef);
+        const memberIds: string[] = Array.isArray(groupSnap.data()?.memberIds)
+          ? (groupSnap.data()?.memberIds as unknown[]).map((entry) => String(entry || ''))
+          : [];
+
+        if (!groupSnap.exists() || !memberIds.includes(requestData.requestedBy)) {
+          transaction.update(requestRef, {
+            status: 'declined',
+            respondedAt: firestore.FieldValue.serverTimestamp(),
+          });
+          return { success: false, error: 'Player is no longer eligible for this group-only team' };
+        }
       }
 
       const participants = Array.isArray(postData.participants) ? [...postData.participants] : [];
@@ -1386,6 +1519,10 @@ export const getJoinedTeamBookingsForUser = async (userId: string): Promise<Join
         const snapshotData = data.bookingSnapshot as PlayerFinderBookingSnapshot | undefined;
         if (!snapshotData) return null;
 
+        const resolvedTeamStatus = hasBookingExpired(snapshotData)
+          ? 'completed'
+          : ((data.teamStatus || 'open') as PlayerFinderPostStatus);
+
         return {
           postId: data.postId || '',
           bookingId: snapshotData.bookingId,
@@ -1398,7 +1535,7 @@ export const getJoinedTeamBookingsForUser = async (userId: string): Promise<Join
           date: snapshotData.date,
           startTime: snapshotData.startTime,
           endTime: snapshotData.endTime,
-          teamStatus: (data.teamStatus || 'open') as PlayerFinderPostStatus,
+          teamStatus: resolvedTeamStatus,
           requestedAt: data.createdAt ? toDate(data.createdAt) : undefined,
           approvedAt: data.respondedAt ? toDate(data.respondedAt) : undefined,
         } as JoinedTeamBooking;
@@ -1485,5 +1622,299 @@ export const sendPlayerFinderChatMessage = async (
   } catch (error: any) {
     console.error('❌ Send player finder chat message error:', error);
     return { success: false, error: error?.message || 'Failed to send message' };
+  }
+};
+
+const mapPlayerGroup = (doc: any): PlayerGroup => {
+  const data = doc.data() || {};
+
+  return {
+    id: doc.id,
+    name: data?.name || 'Group',
+    description: data?.description || '',
+    sports: Array.isArray(data?.sports) ? data.sports : [],
+    createdBy: data?.createdBy || '',
+    createdByName: data?.createdByName || 'Owner',
+    memberIds: Array.isArray(data?.memberIds) ? data.memberIds : [],
+    members: Array.isArray(data?.members)
+      ? data.members.map((member: any) => ({
+          userId: member?.userId || '',
+          name: member?.name || 'Player',
+          role: member?.role === 'owner' ? 'owner' : 'member',
+          joinedAt: toDate(member?.joinedAt),
+          photoURL: member?.photoURL || null,
+          email: member?.email || null,
+        }))
+      : [],
+    memberCount: Number(data?.memberCount || 0),
+    isActive: data?.isActive !== false,
+    createdAt: toDate(data?.createdAt),
+    updatedAt: toDate(data?.updatedAt),
+  };
+};
+
+const mapGroupInvitation = (doc: any): GroupInvitation => {
+  const data = doc.data() || {};
+
+  return {
+    id: doc.id,
+    groupId: data?.groupId || '',
+    groupName: data?.groupName || 'Group',
+    groupOwnerId: data?.groupOwnerId || '',
+    invitedBy: data?.invitedBy || '',
+    invitedByName: data?.invitedByName || 'Owner',
+    invitedUserId: data?.invitedUserId || '',
+    invitedUserEmail: data?.invitedUserEmail || '',
+    status: data?.status || 'pending',
+    createdAt: toDate(data?.createdAt),
+    updatedAt: data?.updatedAt ? toDate(data.updatedAt) : undefined,
+    respondedAt: data?.respondedAt ? toDate(data.respondedAt) : undefined,
+  } as GroupInvitation;
+};
+
+const mapTurfReview = (doc: any): TurfReview => {
+  const data = doc.data() || {};
+
+  return {
+    id: doc.id,
+    bookingId: data?.bookingId || '',
+    turfId: data?.turfId || '',
+    turfName: data?.turfName || 'Turf',
+    userId: data?.userId || '',
+    userName: data?.userName || 'Player',
+    rating: Number(data?.rating || 0),
+    comment: data?.comment || '',
+    createdAt: toDate(data?.createdAt),
+    updatedAt: data?.updatedAt ? toDate(data.updatedAt) : undefined,
+  };
+};
+
+export const getMyGroups = async (userId: string): Promise<PlayerGroup[]> => {
+  try {
+    let snapshot;
+
+    try {
+      snapshot = await db
+        .collection('groups')
+        .where('memberIds', 'array-contains', userId)
+        .orderBy('updatedAt', 'desc')
+        .get();
+    } catch (queryError: any) {
+      if (queryError?.code !== 'firestore/failed-precondition') {
+        throw queryError;
+      }
+
+      snapshot = await db
+        .collection('groups')
+        .where('memberIds', 'array-contains', userId)
+        .get();
+    }
+
+    return snapshot.docs
+      .map(mapPlayerGroup)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  } catch (error) {
+    console.error('❌ Get my groups error:', error);
+    return [];
+  }
+};
+
+export const getGroupById = async (groupId: string): Promise<PlayerGroup | null> => {
+  try {
+    const snap = await db.collection('groups').doc(groupId).get();
+    if (!snap.exists()) {
+      return null;
+    }
+    return mapPlayerGroup(snap);
+  } catch (error) {
+    console.error('❌ Get group by ID error:', error);
+    return null;
+  }
+};
+
+export const getMyGroupInvitations = async (userId: string): Promise<GroupInvitation[]> => {
+  try {
+    let snapshot;
+
+    try {
+      snapshot = await db
+        .collection('groupInvitations')
+        .where('invitedUserId', '==', userId)
+        .where('status', '==', 'pending')
+        .orderBy('createdAt', 'desc')
+        .get();
+    } catch (queryError: any) {
+      if (queryError?.code !== 'firestore/failed-precondition') {
+        throw queryError;
+      }
+
+      snapshot = await db
+        .collection('groupInvitations')
+        .where('invitedUserId', '==', userId)
+        .where('status', '==', 'pending')
+        .get();
+    }
+
+    return snapshot.docs
+      .map(mapGroupInvitation)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  } catch (error) {
+    console.error('❌ Get group invitations error:', error);
+    return [];
+  }
+};
+
+export const getGroupInvitationsForOwner = async (
+  groupId: string,
+  ownerId: string
+): Promise<GroupInvitation[]> => {
+  try {
+    let snapshot;
+
+    try {
+      snapshot = await db
+        .collection('groupInvitations')
+        .where('groupId', '==', groupId)
+        .where('groupOwnerId', '==', ownerId)
+        .orderBy('createdAt', 'desc')
+        .get();
+    } catch (queryError: any) {
+      if (queryError?.code !== 'firestore/failed-precondition') {
+        throw queryError;
+      }
+
+      snapshot = await db
+        .collection('groupInvitations')
+        .where('groupId', '==', groupId)
+        .where('groupOwnerId', '==', ownerId)
+        .get();
+    }
+
+    return snapshot.docs
+      .map(mapGroupInvitation)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  } catch (error) {
+    console.error('❌ Get owner group invitations error:', error);
+    return [];
+  }
+};
+
+export const createPlayerGroup = async (input: {
+  name: string;
+  description?: string;
+  sports?: string[];
+}): Promise<{ success: boolean; groupId?: string; error?: string }> => {
+  try {
+    const data = (await callHttpsFunction('createPlayerGroup', input)) as any;
+    return {
+      success: !!data?.success,
+      groupId: data?.groupId,
+    };
+  } catch (error: any) {
+    console.error('❌ Create player group error:', error);
+    return { success: false, error: error?.message || 'Failed to create group' };
+  }
+};
+
+export const inviteGroupMember = async (input: {
+  groupId: string;
+  inviteeEmail: string;
+}): Promise<{ success: boolean; invitationId?: string; error?: string }> => {
+  try {
+    const data = (await callHttpsFunction('inviteGroupMember', input)) as any;
+    return {
+      success: !!data?.success,
+      invitationId: data?.invitationId,
+    };
+  } catch (error: any) {
+    console.error('❌ Invite group member error:', error);
+    return { success: false, error: error?.message || 'Failed to invite teammate' };
+  }
+};
+
+export const respondToGroupInvitation = async (input: {
+  invitationId: string;
+  action: 'accept' | 'decline';
+}): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const data = (await callHttpsFunction('respondToGroupInvitation', input)) as any;
+    return { success: !!data?.success };
+  } catch (error: any) {
+    console.error('❌ Respond to group invitation error:', error);
+    return { success: false, error: error?.message || 'Failed to update invitation' };
+  }
+};
+
+export const submitTurfReview = async (input: {
+  bookingId: string;
+  rating: number;
+  comment?: string;
+}): Promise<{ success: boolean; reviewId?: string; error?: string }> => {
+  try {
+    const data = (await callHttpsFunction('createTurfReview', input)) as any;
+    return {
+      success: !!data?.success,
+      reviewId: data?.reviewId,
+    };
+  } catch (error: any) {
+    console.error('❌ Submit turf review error:', error);
+    return { success: false, error: error?.message || 'Failed to submit review' };
+  }
+};
+
+export const getMyTurfReviews = async (userId: string): Promise<TurfReview[]> => {
+  try {
+    let snapshot;
+
+    try {
+      snapshot = await db
+        .collection('turfReviews')
+        .where('userId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .get();
+    } catch (queryError: any) {
+      if (queryError?.code !== 'firestore/failed-precondition') {
+        throw queryError;
+      }
+
+      snapshot = await db
+        .collection('turfReviews')
+        .where('userId', '==', userId)
+        .get();
+    }
+
+    return snapshot.docs
+      .map(mapTurfReview)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  } catch (error) {
+    console.error('❌ Get my turf reviews error:', error);
+    return [];
+  }
+};
+
+const isPastBooking = (booking: Booking): boolean => {
+  const endDateTime = getBookingDateTime(booking?.date, booking?.endTime || booking?.startTime);
+  if (!endDateTime) return false;
+  return endDateTime.getTime() <= Date.now();
+};
+
+export const getPendingBookingReviews = async (
+  userId: string,
+  limitCount: number = 1
+): Promise<Booking[]> => {
+  try {
+    const bookings = await getUserBookings(userId);
+
+    return bookings
+      .filter((booking) => booking.status === 'completed' && !booking.hasReview && isPastBooking(booking))
+      .sort((a, b) => {
+        const aTime = (a.completedAt?.getTime?.() || a.createdAt?.getTime?.() || 0);
+        const bTime = (b.completedAt?.getTime?.() || b.createdAt?.getTime?.() || 0);
+        return bTime - aTime;
+      })
+      .slice(0, Math.max(1, limitCount));
+  } catch (error) {
+    console.error('❌ Get pending booking reviews error:', error);
+    return [];
   }
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,19 +9,24 @@ import {
   TextInput,
   ActivityIndicator,
   Switch,
+  Animated,
+  Easing,
+  Modal,
 } from 'react-native';
+import { AchievementBadge } from '../components/ui';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { BlurView } from 'expo-blur';
 import { useNavigation } from '@react-navigation/native';
 import auth from '@react-native-firebase/auth';
 import { useAuth } from '../contexts/AuthContext';
 import { getUserBookings } from '../lib/firebase/firestore';
 import { updateUserProfile, uploadProfileImage } from '../lib/firebase/auth';
+import { colors } from '../lib/theme';
 import { LoadingSpinner } from '../components/ui';
 import { SettingsModal } from '../components/SettingsModal';
-import { theme } from '../lib/theme';
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -33,10 +38,16 @@ const ProfileScreen: React.FC = () => {
     spiritPoints: 0,
     upcomingBookings: 0,
     completedBookings: 0,
+    sportsBreakdown: [] as Array<{ sport: string; count: number }>,
   });
   const [editMode, setEditMode] = useState(false);
+  const [activeProfileTab, setActiveProfileTab] = useState('Dashboard');
   const [displayName, setDisplayName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const profileModalAnim = useRef(new Animated.Value(0)).current;
+  const profileContentAnim = useRef(new Animated.Value(1)).current;
+  const profileTabs = ['Dashboard', 'Performance Matrix', 'Match History', 'Availability'];
   
   // Modal states
   const [notificationsModal, setNotificationsModal] = useState(false);
@@ -58,6 +69,18 @@ const ProfileScreen: React.FC = () => {
     }
   }, [userData]);
 
+  useEffect(() => {
+    if (!profileModalVisible) return;
+
+    profileContentAnim.setValue(0);
+    Animated.timing(profileContentAnim, {
+      toValue: 1,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [activeProfileTab, editMode, profileModalVisible, profileContentAnim]);
+
   const loadUserStats = async () => {
     if (!user) return;
 
@@ -65,19 +88,108 @@ const ProfileScreen: React.FC = () => {
       const bookings = await getUserBookings(user.uid);
       const now = new Date();
       const today = now.toISOString().split('T')[0];
+      const completedBookings = bookings.filter((b) => b.status === 'completed');
+
+      const sportCountMap: Record<string, number> = {};
+      completedBookings.forEach((booking) => {
+        const rawSport = String(booking.sport || 'other').trim().toLowerCase();
+        if (!rawSport) return;
+        sportCountMap[rawSport] = (sportCountMap[rawSport] || 0) + 1;
+      });
+
+      const sportsBreakdown = Object.entries(sportCountMap)
+        .map(([sport, count]) => ({
+          sport: sport.charAt(0).toUpperCase() + sport.slice(1),
+          count,
+        }))
+        .sort((a, b) => b.count - a.count);
 
       setStats({
         spiritPoints: Number(userData?.spiritPoints || 0),
         upcomingBookings: bookings.filter(
           (b) => b.status === 'confirmed' && b.date >= today
         ).length,
-        completedBookings: bookings.filter(
-          (b) => b.status === 'completed'
-        ).length,
+        completedBookings: completedBookings.length,
+        sportsBreakdown,
       });
     } catch (error) {
       console.error('Error loading stats:', error);
     }
+  };
+
+  const achievements = useMemo(() => {
+    const totalEarnedPoints = Number(userData?.totalSpiritPointsEarned || stats.spiritPoints || 0);
+
+    return [
+      {
+        key: 'first',
+        title: 'First Match',
+        subtitle: '1 completed',
+        icon: 'flag-outline' as const,
+        unlocked: stats.completedBookings >= 1,
+      },
+      {
+        key: 'five',
+        title: 'Team Regular',
+        subtitle: '5 completed',
+        icon: 'people-outline' as const,
+        unlocked: stats.completedBookings >= 5,
+      },
+      {
+        key: 'ten',
+        title: 'Unstoppable',
+        subtitle: '10 completed',
+        icon: 'trophy-outline' as const,
+        unlocked: stats.completedBookings >= 10,
+      },
+      {
+        key: 'points',
+        title: 'Point Collector',
+        subtitle: '100 points earned',
+        icon: 'sparkles-outline' as const,
+        unlocked: totalEarnedPoints >= 100,
+      },
+    ];
+  }, [stats.completedBookings, stats.spiritPoints, userData?.totalSpiritPointsEarned]);
+
+  const resolvedDisplayName =
+    displayName || userData?.name || userData?.displayName || user?.displayName || 'User';
+  const profileBio = 'Plays weekly | Open to team invites';
+  const totalMatches = stats.completedBookings + stats.upcomingBookings;
+  const attendanceRate =
+    totalMatches > 0 ? Math.min(99, Math.round((stats.completedBookings / totalMatches) * 100)) : 0;
+  const latestFormCopy =
+    stats.completedBookings >= 3
+      ? `+${Math.min(24, 8 + stats.completedBookings)}% consistency in recent matches`
+      : 'Complete more matches to unlock form insights';
+
+  const openProfileModal = (startInEditMode: boolean = false) => {
+    setEditMode(startInEditMode);
+    setActiveProfileTab('Dashboard');
+    setProfileModalVisible(true);
+    profileModalAnim.setValue(0);
+
+    Animated.spring(profileModalAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      damping: 17,
+      mass: 0.7,
+      stiffness: 180,
+    }).start();
+  };
+
+  const closeProfileModal = () => {
+    Animated.timing(profileModalAnim, {
+      toValue: 0,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setProfileModalVisible(false);
+        setEditMode(false);
+      }
+    });
   };
 
   const handleLogout = () => {
@@ -210,6 +322,21 @@ const ProfileScreen: React.FC = () => {
     }
   };
 
+  const modalCardScale = profileModalAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.92, 1],
+  });
+
+  const modalCardTranslateY = profileModalAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [26, 0],
+  });
+
+  const profileContentTranslateY = profileContentAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [14, 0],
+  });
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -226,47 +353,39 @@ const ProfileScreen: React.FC = () => {
           <Text style={styles.headerTitle}>Profile</Text>
           <TouchableOpacity
             style={styles.editButton}
-            onPress={() => setEditMode(!editMode)}
+            onPress={() => openProfileModal(true)}
           >
             <Ionicons
-              name={editMode ? 'close' : 'pencil'}
+              name="pencil"
               size={20}
               color="#ffffff"
             />
           </TouchableOpacity>
         </View>
 
-        {/* Profile Info with Inline Stats */}
-        <View style={styles.profileSection}>
+        {/* Collapsed Profile Card */}
+        <TouchableOpacity style={styles.profileSection} activeOpacity={0.92} onPress={() => openProfileModal(false)}>
           <View style={styles.profileTopRow}>
-            {/* Avatar */}
             <View style={styles.avatarContainer}>
-              <TouchableOpacity onPress={handleSelectImage} activeOpacity={0.8}>
-                {(userData?.photoURL || user?.photoURL) ? (
-                  <Image
-                    source={{ uri: (userData?.photoURL || user?.photoURL) as string }}
-                    style={styles.avatarImage}
-                    contentFit="cover"
-                    transition={300}
-                  />
-                ) : (
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {(userData?.name || user?.email || 'U')[0].toUpperCase()}
-                    </Text>
-                  </View>
-                )}
-                <View style={styles.cameraButton}>
-                  {uploadingImage ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <Ionicons name="camera" size={16} color="#ffffff" />
-                  )}
+              {(userData?.photoURL || user?.photoURL) ? (
+                <Image
+                  source={{ uri: (userData?.photoURL || user?.photoURL) as string }}
+                  style={styles.avatarImage}
+                  contentFit="cover"
+                  transition={300}
+                />
+              ) : (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {(userData?.name || user?.email || 'U')[0].toUpperCase()}
+                  </Text>
                 </View>
-              </TouchableOpacity>
+              )}
+              <View style={styles.cameraButton}>
+                <Ionicons name="camera" size={16} color="#ffffff" />
+              </View>
             </View>
 
-            {/* Stats Row */}
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
                 <Text style={styles.statNumber}>{stats.spiritPoints}</Text>
@@ -285,84 +404,15 @@ const ProfileScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* User Info */}
           <View style={styles.infoContainer}>
-            {editMode ? (
-              <>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Name</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={displayName}
-                    onChangeText={setDisplayName}
-                    placeholder="Enter your name"
-                    placeholderTextColor="#9ca3af"
-                  />
-                </View>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Phone Number</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={phoneNumber}
-                    onChangeText={setPhoneNumber}
-                    placeholder="Enter phone number"
-                    placeholderTextColor="#9ca3af"
-                    keyboardType="phone-pad"
-                  />
-                </View>
-                <TouchableOpacity
-                  style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-                  onPress={handleSaveProfile}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <Text style={styles.saveButtonText}>Save Changes</Text>
-                  )}
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <Text style={styles.userName}>
-                  {displayName || userData?.name || userData?.displayName || user?.displayName || 'User'}
-                </Text>
-                <Text style={styles.userBio}>
-                  Plays weekly | Open to team invites
-                </Text>
-                {editMode && (
-                  <TouchableOpacity style={styles.editIconButton}>
-                    <Ionicons name="pencil" size={16} color="#6b7280" />
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
+            <Text style={styles.userName}>{resolvedDisplayName}</Text>
+            <Text style={styles.userBio}>{profileBio}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Menu Options */}
         <View style={styles.menuSection}>
-          <TouchableOpacity style={styles.menuItem}>
-            <View style={styles.menuItemLeft}>
-              <View style={styles.menuIconContainer}>
-                <Ionicons name="calendar-outline" size={22} color="#111827" />
-              </View>
-              <Text style={styles.menuItemText}>Upcoming Bookings</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuItem}>
-            <View style={styles.menuItemLeft}>
-              <View style={styles.menuIconContainer}>
-                <Ionicons name="people-outline" size={22} color="#111827" />
-              </View>
-              <Text style={styles.menuItemText}>Team Invites</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('ReviewsGiven')}>
             <View style={styles.menuItemLeft}>
               <View style={styles.menuIconContainer}>
                 <Ionicons name="star-outline" size={22} color="#111827" />
@@ -425,6 +475,249 @@ const ProfileScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={profileModalVisible}
+        transparent
+        animationType="none"
+        onRequestClose={closeProfileModal}
+      >
+        <View style={styles.profileModalRoot}>
+          <Animated.View style={[styles.profileModalBackdrop, { opacity: profileModalAnim }]}>
+            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+          </Animated.View>
+
+          <View style={styles.profileModalContentWrap} pointerEvents="box-none">
+            <Animated.View
+              style={[
+                styles.profileModalCard,
+                {
+                  opacity: profileModalAnim,
+                  transform: [{ scale: modalCardScale }, { translateY: modalCardTranslateY }],
+                },
+              ]}
+            >
+              <View style={styles.profileModalHeader}>
+                <View style={styles.profileModalHeaderCopy}>
+                  <Text style={styles.profileModalTitle}>Your Profile</Text>
+                  <Text style={styles.profileModalSubtitle}>
+                    {editMode ? 'Edit your details' : 'Stats, achievements, and activity'}
+                  </Text>
+                </View>
+
+                <TouchableOpacity style={styles.profileModalCloseButton} onPress={closeProfileModal}>
+                  <Ionicons name="close" size={20} color="#111827" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                style={styles.profileModalScrollView}
+                contentContainerStyle={styles.profileModalBody}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.profileIdentityBlock}>
+                  <TouchableOpacity
+                    style={styles.profileIdentityAvatarWrap}
+                    onPress={handleSelectImage}
+                    activeOpacity={0.85}
+                  >
+                    {(userData?.photoURL || user?.photoURL) ? (
+                      <Image
+                        source={{ uri: (userData?.photoURL || user?.photoURL) as string }}
+                        style={[styles.avatarImage, styles.profileIdentityAvatarImage]}
+                        contentFit="cover"
+                        transition={300}
+                      />
+                    ) : (
+                      <View style={[styles.avatar, styles.profileIdentityAvatar]}>
+                        <Text style={styles.avatarText}>
+                          {(userData?.name || user?.email || 'U')[0].toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={styles.cameraButton}>
+                      {uploadingImage ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                      ) : (
+                        <Ionicons name="camera" size={16} color="#ffffff" />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+
+                  <Text style={styles.profileIdentityName}>{resolvedDisplayName}</Text>
+                  <Text style={styles.profileIdentityMeta}>{profileBio}</Text>
+                </View>
+
+                <View style={styles.profileHeadlineStats}>
+                  <View style={styles.profileHeadlineStatBlock}>
+                    <Text style={styles.profileHeadlineStatLabel}>Matches</Text>
+                    <Text style={styles.profileHeadlineStatValue}>{totalMatches}</Text>
+                  </View>
+                  <View style={styles.profileHeadlineStatBlock}>
+                    <Text style={styles.profileHeadlineStatLabel}>Spirit</Text>
+                    <Text style={styles.profileHeadlineStatValue}>{stats.spiritPoints}</Text>
+                  </View>
+                  <View style={[styles.profileHeadlineStatBlock, styles.profileHeadlineStatBlockLast]}>
+                    <Text style={styles.profileHeadlineStatLabel}>Played</Text>
+                    <Text style={styles.profileHeadlineStatValue}>{stats.completedBookings}</Text>
+                  </View>
+                </View>
+
+                <Animated.View
+                  style={[
+                    styles.profileAnimatedContent,
+                    {
+                      opacity: profileContentAnim,
+                      transform: [{ translateY: profileContentTranslateY }],
+                    },
+                  ]}
+                >
+                  {editMode ? (
+                    <View style={styles.profileEditPanel}>
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Name</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={displayName}
+                          onChangeText={setDisplayName}
+                          placeholder="Enter your name"
+                          placeholderTextColor="#9ca3af"
+                        />
+                      </View>
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Phone Number</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={phoneNumber}
+                          onChangeText={setPhoneNumber}
+                          placeholder="Enter phone number"
+                          placeholderTextColor="#9ca3af"
+                          keyboardType="phone-pad"
+                        />
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+                        onPress={handleSaveProfile}
+                        disabled={saving}
+                      >
+                        {saving ? (
+                          <ActivityIndicator size="small" color="#ffffff" />
+                        ) : (
+                          <Text style={styles.saveButtonText}>Save Changes</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.profileTabsStrip}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                          <View style={styles.profileTabsRow}>
+                            {profileTabs.map((tab) => {
+                              const isActive = activeProfileTab === tab;
+
+                              return (
+                                <TouchableOpacity
+                                  key={tab}
+                                  style={styles.profileTabButton}
+                                  onPress={() => setActiveProfileTab(tab)}
+                                  activeOpacity={0.85}
+                                >
+                                  <Text style={[styles.profileTabLabel, isActive && styles.profileTabLabelActive]}>
+                                    {tab}
+                                  </Text>
+                                  {isActive ? <View style={styles.profileTabUnderline} /> : null}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </ScrollView>
+                      </View>
+
+                      {activeProfileTab === 'Dashboard' ? (
+                        <View style={styles.profileDashboardStack}>
+                          <View style={styles.profileInsightCard}>
+                            <View style={styles.profileInsightIconWrap}>
+                              <Ionicons name="trending-up" size={20} color={colors.primary[600]} />
+                            </View>
+                            <View style={styles.profileInsightTextWrap}>
+                              <Text style={styles.profileInsightTitle}>Latest Form</Text>
+                              <Text style={styles.profileInsightCopy}>{latestFormCopy}</Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.profileReliabilityCard}>
+                            <View style={styles.profileReliabilityCopyWrap}>
+                              <Text style={styles.profileReliabilityTitle}>Reliability</Text>
+                              <Text style={styles.profileReliabilityCopy}>Attendance to confirmed sessions</Text>
+                            </View>
+
+                            <View style={styles.profileReliabilityScoreRing}>
+                              <Text style={styles.profileReliabilityScoreText}>{attendanceRate}%</Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.achievementSection}>
+                            <Text style={styles.sectionHeading}>Achievements</Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.achievementsRow}>
+                              {achievements.map((achievement) => (
+                                <AchievementBadge
+                                  key={achievement.key}
+                                  title={achievement.title}
+                                  subtitle={achievement.subtitle}
+                                  unlocked={achievement.unlocked}
+                                  icon={achievement.icon}
+                                />
+                              ))}
+                            </ScrollView>
+                          </View>
+
+                          <View style={styles.sportsSection}>
+                            <Text style={styles.sectionHeading}>Your Sports</Text>
+                            {stats.sportsBreakdown.length === 0 ? (
+                              <Text style={styles.emptySportsText}>Complete a match to start tracking sport stats.</Text>
+                            ) : (
+                              <View style={styles.sportsChipsRow}>
+                                {stats.sportsBreakdown.slice(0, 3).map((entry) => (
+                                  <View key={entry.sport} style={styles.sportChip}>
+                                    <Text style={styles.sportChipLabel}>{entry.sport}</Text>
+                                    <Text style={styles.sportChipValue}>{entry.count}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+                          </View>
+
+                          <View style={styles.profileMetaSection}>
+                            {!!(userData?.email || user?.email) ? (
+                              <View style={styles.profileMetaRow}>
+                                <Ionicons name="mail-outline" size={15} color={colors.primary[600]} />
+                                <Text style={styles.profileMetaValue}>{userData?.email || user?.email}</Text>
+                              </View>
+                            ) : null}
+                            {!!(phoneNumber || userData?.phoneNumber) ? (
+                              <View style={styles.profileMetaRow}>
+                                <Ionicons name="call-outline" size={15} color={colors.primary[600]} />
+                                <Text style={styles.profileMetaValue}>{phoneNumber || userData?.phoneNumber}</Text>
+                              </View>
+                            ) : null}
+                          </View>
+                        </View>
+                      ) : (
+                        <View style={styles.profileTabPlaceholderCard}>
+                          <Text style={styles.profileTabPlaceholderTitle}>{activeProfileTab}</Text>
+                          <Text style={styles.profileTabPlaceholderCopy}>
+                            Detailed {activeProfileTab.toLowerCase()} insights are coming soon.
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+                </Animated.View>
+              </ScrollView>
+            </Animated.View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Modals */}
       <SettingsModal
@@ -598,6 +891,51 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
+  achievementSection: {
+    width: '100%',
+    marginTop: 16,
+  },
+  sectionHeading: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  achievementsRow: {
+    paddingRight: 8,
+  },
+  sportsSection: {
+    width: '100%',
+    marginTop: 14,
+  },
+  sportsChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  sportChip: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    backgroundColor: '#f0fdf4',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  sportChipLabel: {
+    color: '#166534',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sportChipValue: {
+    color: '#14532d',
+    marginTop: 2,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  emptySportsText: {
+    color: '#6b7280',
+    fontSize: 13,
+  },
   greenHeader: {
     backgroundColor: '#16a34a',
     paddingTop: 50,
@@ -655,6 +993,346 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 6,
+  },
+  profileModalRoot: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  profileModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  profileModalContentWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+  },
+  profileModalCard: {
+    width: '100%',
+    height: '84%',
+    minHeight: 460,
+    maxHeight: '88%',
+    backgroundColor: '#fdfdfd',
+    borderRadius: 22,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 18,
+  },
+  profileModalHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+  },
+  profileModalHeaderCopy: {
+    flex: 1,
+    marginRight: 8,
+  },
+  profileModalTitle: {
+    fontSize: 21,
+    fontWeight: '700',
+    color: '#111111',
+  },
+  profileModalSubtitle: {
+    marginTop: 1,
+    fontSize: 12,
+    color: '#3a3a3c',
+    lineHeight: 16,
+  },
+  profileModalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f3f4f6',
+  },
+  profileModalScrollView: {
+    flex: 1,
+  },
+  profileModalBody: {
+    flexGrow: 1,
+    padding: 16,
+    paddingTop: 14,
+    paddingBottom: 26,
+  },
+  profileAnimatedContent: {
+    marginTop: 2,
+  },
+  profileIdentityBlock: {
+    alignItems: 'center',
+    paddingVertical: 6,
+    marginBottom: 14,
+  },
+  profileIdentityAvatarWrap: {
+    marginBottom: 10,
+  },
+  profileIdentityAvatar: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+  },
+  profileIdentityAvatarImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+  },
+  profileIdentityName: {
+    fontSize: 29,
+    fontWeight: '700',
+    color: '#111111',
+    letterSpacing: 0.2,
+  },
+  profileIdentityMeta: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#3a3a3c',
+    textAlign: 'center',
+  },
+  profileHeadlineStats: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5e5ea',
+    marginBottom: 16,
+  },
+  profileHeadlineStatBlock: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRightWidth: 1,
+    borderRightColor: '#e5e5ea',
+  },
+  profileHeadlineStatBlockLast: {
+    borderRightWidth: 0,
+  },
+  profileHeadlineStatLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#3a3a3c',
+    marginBottom: 3,
+  },
+  profileHeadlineStatValue: {
+    fontSize: 29,
+    fontWeight: '600',
+    color: '#111111',
+  },
+  profileTabsStrip: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e5ea',
+    marginBottom: 16,
+  },
+  profileTabsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 22,
+    paddingHorizontal: 2,
+  },
+  profileTabButton: {
+    paddingBottom: 10,
+    minWidth: 70,
+  },
+  profileTabLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  profileTabLabelActive: {
+    color: '#111111',
+    fontWeight: '700',
+  },
+  profileTabUnderline: {
+    marginTop: 8,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: '#16a34a',
+  },
+  profileDashboardStack: {
+    gap: 14,
+  },
+  profileInsightCard: {
+    borderWidth: 1,
+    borderColor: '#e5e5ea',
+    backgroundColor: '#ffffff',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 12,
+  },
+  profileInsightIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: '#dcfce7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileInsightTextWrap: {
+    flex: 1,
+  },
+  profileInsightTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111111',
+  },
+  profileInsightCopy: {
+    marginTop: 3,
+    fontSize: 12,
+    color: '#3a3a3c',
+  },
+  profileReliabilityCard: {
+    borderWidth: 1,
+    borderColor: '#e5e5ea',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    borderRadius: 12,
+  },
+  profileReliabilityCopyWrap: {
+    flex: 1,
+  },
+  profileReliabilityTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111111',
+  },
+  profileReliabilityCopy: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#3a3a3c',
+  },
+  profileReliabilityScoreRing: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 4,
+    borderColor: '#16a34a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0fdf4',
+  },
+  profileReliabilityScoreText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111111',
+  },
+  profileEditPanel: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5e5ea',
+    padding: 14,
+    borderRadius: 12,
+  },
+  profileTabPlaceholderCard: {
+    borderWidth: 1,
+    borderColor: '#e5e5ea',
+    backgroundColor: '#ffffff',
+    padding: 18,
+    borderRadius: 12,
+  },
+  profileTabPlaceholderTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111111',
+  },
+  profileTabPlaceholderCopy: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#3a3a3c',
+  },
+  profileHeroCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#dcfce7',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  profileHeroAvatarWrap: {
+    marginBottom: 10,
+  },
+  profileHeroAvatar: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+  },
+  profileHeroAvatarImage: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+  },
+  profileHeroName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  profileHeroBio: {
+    marginTop: 2,
+    fontSize: 13,
+    color: '#4b5563',
+    textAlign: 'center',
+  },
+  profileHeroMetaPill: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    backgroundColor: '#f0fdf4',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    maxWidth: '100%',
+  },
+  profileHeroMetaText: {
+    fontSize: 12,
+    color: '#166534',
+    fontWeight: '600',
+  },
+  profileStatsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  profileStatCard: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    paddingVertical: 12,
+  },
+  profileStatNumber: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  profileStatLabel: {
+    marginTop: 2,
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '600',
   },
   profileTopRow: {
     flexDirection: 'row',
@@ -745,6 +1423,25 @@ const styles = StyleSheet.create({
   infoContainer: {
     width: '100%',
     alignItems: 'center',
+  },
+  profileMetaSection: {
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#ffffff',
+    padding: 14,
+    gap: 10,
+  },
+  profileMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  profileMetaValue: {
+    flex: 1,
+    fontSize: 14,
+    color: '#374151',
   },
   userName: {
     fontSize: 20,
@@ -853,7 +1550,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#111827',
   },
-  // Modal content styles
   settingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

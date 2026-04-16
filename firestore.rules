@@ -51,6 +51,19 @@ service cloud.firestore {
              get(/databases/$(database)/documents/turfs/$(turfId)).data.ownerId == request.auth.uid;
     }
 
+    function groupExists(groupId) {
+      return exists(/databases/$(database)/documents/groups/$(groupId));
+    }
+
+    function isGroupMember(groupId, userId) {
+      return groupExists(groupId) &&
+             userId in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+    }
+
+    function isCurrentUserGroupMember(groupId) {
+      return isAuthenticated() && isGroupMember(groupId, request.auth.uid);
+    }
+
     function playerFinderPostExists(postId) {
       return exists(/databases/$(database)/documents/playerFinderPosts/$(postId));
     }
@@ -246,6 +259,32 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Player groups. Writes are backend-only through callable functions.
+    match /groups/{groupId} {
+      allow read: if isAdmin() || (isAuthenticated() && request.auth.uid in resource.data.memberIds);
+      allow create, update, delete: if false;
+    }
+
+    // Group invitations. Writes are backend-only through callable functions.
+    match /groupInvitations/{invitationId} {
+      allow read: if isAdmin() ||
+                    (
+                      isAuthenticated() &&
+                      (
+                        request.auth.uid == resource.data.invitedUserId ||
+                        request.auth.uid == resource.data.invitedBy ||
+                        request.auth.uid == resource.data.groupOwnerId
+                      )
+                    );
+      allow create, update, delete: if false;
+    }
+
+    // Turf reviews are written via backend callable functions only.
+    match /turfReviews/{reviewId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if false;
+    }
+
     // Player Finder posts
     match /playerFinderPosts/{postId} {
       allow read: if isAuthenticated();
@@ -256,7 +295,15 @@ service cloud.firestore {
                       request.resource.data.status == 'open' &&
                       request.resource.data.requiredPlayers is int &&
                       request.resource.data.requiredPlayers >= 2 &&
-                      request.resource.data.participants is list;
+                      request.resource.data.participants is list &&
+                      request.resource.data.inviteScope in ['public', 'group'] &&
+                      (
+                        request.resource.data.inviteScope != 'group' ||
+                        (
+                          request.resource.data.groupId is string &&
+                          isCurrentUserGroupMember(request.resource.data.groupId)
+                        )
+                      );
 
       allow update: if isAdmin() ||
                       (
@@ -284,6 +331,12 @@ service cloud.firestore {
                       request.resource.data.hostId is string &&
                       playerFinderPostHostMatches(request.resource.data.postId, request.resource.data.hostId) &&
                       playerFinderPostIsOpen(request.resource.data.postId) &&
+                      (
+                        get(/databases/$(database)/documents/playerFinderPosts/$(request.resource.data.postId)).data.inviteScope != 'group' ||
+                        isCurrentUserGroupMember(
+                          get(/databases/$(database)/documents/playerFinderPosts/$(request.resource.data.postId)).data.groupId
+                        )
+                      ) &&
                       request.auth.uid != request.resource.data.hostId;
 
       allow update: if isAdmin() ||

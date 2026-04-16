@@ -19,6 +19,8 @@ export default function AdminDashboardScreen({ navigation }: any) {
     totalBookings: 0,
     totalUsers: 0,
     revenue: 0,
+    totalReviews: 0,
+    averageRating: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -33,6 +35,19 @@ export default function AdminDashboardScreen({ navigation }: any) {
       // Fetch turfs
       const turfsSnapshot = await db.collection('turfs').get();
       const totalTurfs = turfsSnapshot.size;
+      let totalReviews = 0;
+      let weightedRatingSum = 0;
+
+      turfsSnapshot.docs.forEach((doc) => {
+        const turf = doc.data() as any;
+        const turfReviewCount = Number(turf.totalReviews ?? turf.reviews ?? 0);
+        const turfRating = Number(turf.rating || 0);
+
+        totalReviews += turfReviewCount;
+        weightedRatingSum += turfRating * turfReviewCount;
+      });
+
+      const averageRating = totalReviews > 0 ? weightedRatingSum / totalReviews : 0;
       
       // Fetch bookings
       const bookingsSnapshot = await db.collection('bookings').get();
@@ -57,6 +72,8 @@ export default function AdminDashboardScreen({ navigation }: any) {
         totalBookings,
         totalUsers,
         revenue,
+        totalReviews,
+        averageRating: Number(averageRating.toFixed(2)),
       });
       
     } catch (error) {
@@ -252,6 +269,22 @@ export default function AdminDashboardScreen({ navigation }: any) {
               ₹{stats.revenue.toLocaleString('en-IN')}
             </Text>
             <Text style={styles.statLabel}>Platform Revenue</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <View style={[styles.statIconContainer, { backgroundColor: '#fef3c7' }]}>
+              <Ionicons name="star" size={24} color="#f59e0b" />
+            </View>
+            <Text style={styles.statValue}>{stats.averageRating.toFixed(1)}</Text>
+            <Text style={styles.statLabel}>Avg Turf Rating</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <View style={[styles.statIconContainer, { backgroundColor: '#d1fae5' }]}>
+              <Ionicons name="chatbubble-ellipses-outline" size={24} color="#10b981" />
+            </View>
+            <Text style={styles.statValue}>{stats.totalReviews}</Text>
+            <Text style={styles.statLabel}>Total Reviews</Text>
           </View>
         </View>
 
