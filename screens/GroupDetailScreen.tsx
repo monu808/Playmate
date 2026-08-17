@@ -37,7 +37,7 @@ const GroupDetailScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [group, setGroup] = useState<PlayerGroup | null>(null);
   const [ownerInvites, setOwnerInvites] = useState<GroupInvitation[]>([]);
-  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteUsername, setInviteUsername] = useState('');
   const [inviting, setInviting] = useState(false);
 
   const isOwner = !!group && !!user && group.createdBy === user.uid;
@@ -89,8 +89,8 @@ const GroupDetailScreen: React.FC = () => {
   const handleInvite = async () => {
     if (!isOwner || !group) return;
 
-    if (!inviteEmail.trim()) {
-      Alert.alert('Email Required', 'Enter teammate email to send an invitation.');
+    if (!inviteUsername.trim()) {
+      Alert.alert('Username Required', 'Enter teammate username to send an invitation.');
       return;
     }
 
@@ -98,7 +98,7 @@ const GroupDetailScreen: React.FC = () => {
       setInviting(true);
       const result = await inviteGroupMember({
         groupId: group.id,
-        inviteeEmail: inviteEmail.trim(),
+        inviteeUsername: inviteUsername.trim().toLowerCase(),
       });
 
       if (!result.success) {
@@ -106,7 +106,7 @@ const GroupDetailScreen: React.FC = () => {
         return;
       }
 
-      setInviteEmail('');
+      setInviteUsername('');
       await loadData();
     } catch (error) {
       console.error('Error inviting teammate:', error);
@@ -138,7 +138,9 @@ const GroupDetailScreen: React.FC = () => {
   const renderOwnerInvite = ({ item }: { item: GroupInvitation }) => (
     <View style={styles.inviteRow}>
       <View>
-        <Text style={styles.inviteEmailText}>{item.invitedUserEmail}</Text>
+        <Text style={styles.inviteEmailText}>
+          {item.invitedUserUsername || item.invitedUserEmail || 'Unknown user'}
+        </Text>
         <Text style={styles.inviteStatusText}>Status: {item.status}</Text>
       </View>
       <View style={[styles.inviteStatusPill, item.status === 'pending' ? styles.pendingPill : styles.respondedPill]}>
@@ -190,12 +192,11 @@ const GroupDetailScreen: React.FC = () => {
                 <Text style={styles.panelTitle}>Invite Teammate</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="teammate@email.com"
+                  placeholder="teammate_username"
                   placeholderTextColor="#9ca3af"
-                  value={inviteEmail}
-                  onChangeText={setInviteEmail}
+                  value={inviteUsername}
+                  onChangeText={setInviteUsername}
                   autoCapitalize="none"
-                  keyboardType="email-address"
                 />
                 <TouchableOpacity
                   style={[styles.inviteButton, inviting && styles.disabledButton]}

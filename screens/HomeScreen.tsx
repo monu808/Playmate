@@ -19,11 +19,11 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { getTurfs } from '../lib/firebase/firestore';
+import { getTurfs, searchUsers } from '../lib/firebase/firestore';
 import { LoadingSpinner, Modal } from '../components/ui';
 import { colors, typography, spacing, borderRadius, shadows } from '../lib/theme';
 import { formatCurrency, resolveTurfPricing } from '../lib/utils';
-import { Turf, TurfSport } from '../types';
+import { Turf, TurfSport, User } from '../types';
 
 //==============================================================================
 // UTILITY FUNCTIONS
@@ -112,6 +112,7 @@ const SPORT_MARKERS = {
 export default function HomeScreen({ navigation }: any) {
   const [turfs, setTurfs] = useState<Turf[]>([]);
   const [filteredTurfs, setFilteredTurfs] = useState<Turf[]>([]);
+  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -314,6 +315,17 @@ export default function HomeScreen({ navigation }: any) {
     setFilteredTurfs(filtered);
   }, [turfs, selectedSport, searchQuery]); // Dependencies
 
+  // PERFORMANCE: Memoize user filtering logic
+  const filterUsers = useCallback(async () => {
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      const results = await searchUsers(query);
+      setFilteredUsers(results);
+    } else {
+      setFilteredUsers([]);
+    }
+  }, [searchQuery]); // Dependencies
+
   // Load data on mount ONLY
   useEffect(() => {
     const initializeData = async () => {
@@ -329,6 +341,12 @@ export default function HomeScreen({ navigation }: any) {
     filterTurfs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turfs, selectedSport, searchQuery]); // Only re-filter when these change
+
+  // Filter users when search query changes
+  useEffect(() => {
+    filterUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]); // Only re-filter when search query changes
 
   //==========================================================================
   // RENDER FUNCTIONS - MEMOIZED
@@ -422,13 +440,114 @@ export default function HomeScreen({ navigation }: any) {
     );
   });
 
+  // PERFORMANCE: Memoize user card component
+  const UserCard = memo(({ item }: { item: User }) => (
+    <TouchableOpacity
+      onPress={() => navigation.navigate('Profile', { userId: item.uid })}
+      activeOpacity={0.7}
+      style={styles.userCardWrapper}
+    >
+      <View style={styles.userCard}>
+        {/* Avatar */}
+        <View style={styles.userAvatarContainer}>
+          {item.photoURL ? (
+            <Image
+              source={{ uri: item.photoURL }}
+              style={styles.userAvatar}
+              contentFit="cover"
+              transition={150}
+              cachePolicy="memory-disk"
+              priority="normal"
+              recyclingKey={item.uid}
+            />
+          ) : (
+            <View style={[styles.userAvatar, { backgroundColor: colors.primary[400] }]}>
+              <Text style={styles.userAvatarInitial}>
+                {(item.displayName || item.username || item.name || 'U')[0]?.toUpperCase()}
+              </Text>
+            </View>
+          )}
+        </View>
+        
+        {/* User Info */}
+        <View style={styles.userInfo}>
+          {/* Username */}
+          <Text style={styles.userName} numberOfLines={1}>
+            {item.displayName || item.username || item.name || 'Player'}
+          </Text>
+          
+          {/* Role Badge */}
+          <View style={styles.userRoleBadge}>
+            <Text style={styles.userRoleBadgeText}>
+              {item.role?.toUpperCase() || 'USER'}
+            </Text>
+          </View>
+          
+          {/* Spirit Points */}
+          {item.spiritPoints !== undefined && (
+            <View style={styles.userStatsRow}>
+              <Ionicons name="star" size={14} color="#fbbf24" />
+              <Text style={styles.userStats}>
+                {item.spiritPoints} spirit points
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Arrow */}
+        <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
+      </View>
+    </TouchableOpacity>
+  ));
+
   // Render function for FlatList
   const renderTurfCard = useCallback(({ item }: { item: Turf }) => (
     <TurfCard item={item} />
   ), []);
 
   // PERFORMANCE: Memoize keyExtractor
-  const keyExtractor = useCallback((item: Turf) => item.id, []);
+  const keyExtractor = useCallback((item: Turf | User) => {
+    if ('id' in item) return (item as Turf).id;
+    return (item as User).uid;
+  }, []);
+
+  const hasSearchQuery = searchQuery.trim().length > 0;
+
+  const searchSectionItems = useMemo(() => {
+    if (!hasSearchQuery) return [] as Array<
+      | { type: 'section'; id: string; title: string }
+      | { type: 'turf'; id: string; item: Turf }
+      | { type: 'user'; id: string; item: User }
+      | { type: 'empty'; id: string; message: string }
+    >;
+
+    const items: Array<
+      | { type: 'section'; id: string; title: string }
+      | { type: 'turf'; id: string; item: Turf }
+      | { type: 'user'; id: string; item: User }
+      | { type: 'empty'; id: string; message: string }
+    > = [];
+
+    items.push({ type: 'section', id: 'section-turfs', title: 'Turfs' });
+    if (filteredTurfs.length === 0) {
+      items.push({ type: 'empty', id: 'empty-turfs', message: 'No turfs found' });
+    } else {
+      filteredTurfs.forEach((turf) => {
+        items.push({ type: 'turf', id: `turf-${turf.id}`, item: turf });
+      });
+    }
+
+    items.push({ type: 'section', id: 'section-players', title: 'Players' });
+    if (filteredUsers.length === 0) {
+      items.push({ type: 'empty', id: 'empty-players', message: 'No players found' });
+    } else {
+      filteredUsers.forEach((user) => {
+        items.push({ type: 'user', id: `user-${user.uid}`, item: user });
+      });
+    }
+
+    return items;
+  }, [filteredTurfs, filteredUsers, hasSearchQuery]);
 
   if (loading) {
     return (
@@ -510,7 +629,8 @@ export default function HomeScreen({ navigation }: any) {
       </View>
 
       {/* Promotional Banner Carousel */}
-      <View style={styles.bannerSection}>
+      {!hasSearchQuery && (
+        <View style={styles.bannerSection}>
         <ScrollView
           ref={bannerScrollViewRef}
           horizontal
@@ -559,24 +679,72 @@ export default function HomeScreen({ navigation }: any) {
             />
           ))}
         </View>
-      </View>
+        </View>
+      )}
 
-      {/* Turfs List or Map */}
+      {/* Turfs or Players List or Map */}
       <View style={{ flex: 1 }}>
-        {filteredTurfs.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="search-outline" size={64} color={colors.gray[300]} />
-            <Text style={styles.emptyTitle}>No turfs found</Text>
-            <Text style={styles.emptySubtitle}>
-              {searchQuery || selectedSport !== 'all'
-                ? 'Try adjusting your search or filters'
-                : 'Check back later for new turfs'}
-            </Text>
-          </View>
-        ) : viewMode === 'map' ? (
-        <View style={styles.mapContainer}>
-          <View style={styles.mapWrapper}>
-            <MapView
+        {/* Show search results if searching */}
+        {hasSearchQuery ? (
+          filteredTurfs.length === 0 && filteredUsers.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="search-outline" size={64} color={colors.gray[300]} />
+              <Text style={styles.emptyTitle}>No results found</Text>
+              <Text style={styles.emptySubtitle}>
+                Try adjusting your search or filters
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={searchSectionItems}
+              renderItem={({ item }) => {
+                if (item.type === 'section') {
+                  return (
+                    <View style={styles.searchSectionHeader}>
+                      <Text style={styles.searchSectionTitle}>{item.title}</Text>
+                    </View>
+                  );
+                }
+
+                if (item.type === 'empty') {
+                  return (
+                    <View style={styles.searchSectionEmpty}>
+                      <Text style={styles.searchSectionEmptyText}>{item.message}</Text>
+                    </View>
+                  );
+                }
+
+                if (item.type === 'turf') {
+                  return <TurfCard item={item.item} />;
+                }
+
+                return <UserCard item={item.item} />;
+              }}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContainer}
+              showsVerticalScrollIndicator={false}
+              maxToRenderPerBatch={6}
+              initialNumToRender={6}
+              windowSize={6}
+              removeClippedSubviews={Platform.OS === 'android'}
+            />
+          )
+        ) : (
+          // Show normal turfs list/map when not searching
+          filteredTurfs.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="search-outline" size={64} color={colors.gray[300]} />
+              <Text style={styles.emptyTitle}>No turfs found</Text>
+              <Text style={styles.emptySubtitle}>
+                {selectedSport !== 'all'
+                  ? 'Try adjusting your filters'
+                  : 'Check back later for new turfs'}
+              </Text>
+            </View>
+          ) : viewMode === 'map' ? (
+          <View style={styles.mapContainer}>
+            <View style={styles.mapWrapper}>
+              <MapView
               provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
               style={styles.map}
               initialRegion={{
@@ -625,25 +793,26 @@ export default function HomeScreen({ navigation }: any) {
           </View>
         </View>
         ) : (
-          <FlatList
-            data={filteredTurfs}
-            renderItem={renderTurfCard}
-            keyExtractor={keyExtractor}
-            contentContainerStyle={styles.listContainer}
-            showsVerticalScrollIndicator={false}
-            maxToRenderPerBatch={5}
-            initialNumToRender={5}
-            windowSize={5}
-            removeClippedSubviews={Platform.OS === 'android'}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={colors.primary[600]}
-                colors={[colors.primary[600]]}
-              />
-            }
-          />
+            <FlatList
+              data={filteredTurfs}
+              renderItem={renderTurfCard}
+              keyExtractor={keyExtractor}
+              contentContainerStyle={styles.listContainer}
+              showsVerticalScrollIndicator={false}
+              maxToRenderPerBatch={5}
+              initialNumToRender={5}
+              windowSize={5}
+              removeClippedSubviews={Platform.OS === 'android'}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor={colors.primary[600]}
+                  colors={[colors.primary[600]]}
+                />
+              }
+            />
+          )
         )}
       </View>
 
@@ -944,7 +1113,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius['2xl'],
     ...shadows.lg,
     elevation: 8,
-    height: 160,
+    minHeight: 160,
   },
   locationRow: {
     paddingTop: 16,
@@ -1093,6 +1262,29 @@ const styles = StyleSheet.create({
   listContainer: {
     padding: spacing.lg,
   },
+  searchSectionHeader: {
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  searchSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  searchSectionEmpty: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: '#ffffff',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.gray[200],
+    marginBottom: spacing.md,
+  },
+  searchSectionEmptyText: {
+    fontSize: 13,
+    color: colors.gray[500],
+    fontWeight: '500',
+  },
   turfCardWrapper: {
     marginBottom: spacing.md,
   },
@@ -1184,6 +1376,77 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.primary[600],
   },
+
+  // User Card Styles
+  userCardWrapper: {
+    marginBottom: spacing.md,
+    marginHorizontal: spacing.md,
+  },
+  userCard: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    ...shadows.md,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  userAvatarContainer: {
+    marginRight: spacing.md,
+  },
+  userAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary[500],
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.primary[200],
+  },
+  userAvatarInitial: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  userRoleBadge: {
+    backgroundColor: colors.primary[100],
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    alignSelf: 'flex-start',
+    marginBottom: spacing.xs,
+  },
+  userRoleBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary[700],
+    letterSpacing: 0.3,
+  },
+  userStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  userStats: {
+    fontSize: 12,
+    color: colors.gray[600],
+    fontWeight: '500',
+  },
+
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',

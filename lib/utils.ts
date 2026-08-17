@@ -505,6 +505,26 @@ export function validateEmail(email: string): boolean {
 }
 
 /**
+ * Normalize username for storage/lookup.
+ */
+export function normalizeUsername(username: string): string {
+  return username.trim();
+}
+
+/**
+ * Validate username format.
+ * Rules: 1-12 chars, must not contain '/'.
+ */
+export function validateUsername(username: string): boolean {
+  const normalized = normalizeUsername(username);
+  if (normalized.length < 1 || normalized.length > 12) {
+    return false;
+  }
+
+  return !normalized.includes('/');
+}
+
+/**
  * Validate phone number (Indian format)
  */
 export function validatePhone(phone: string): boolean {

@@ -32,6 +32,7 @@ export type TurfSport = 'football' | 'cricket' | 'basketball' | 'badminton' | 't
 export interface User {
   uid: string;
   name?: string;
+  username?: string;
   email: string | null;
   role: 'user' | 'admin' | 'owner';
   createdAt: Date;
@@ -229,7 +230,8 @@ export interface GroupInvitation {
   invitedBy: string;
   invitedByName: string;
   invitedUserId: string;
-  invitedUserEmail: string;
+  invitedUserEmail?: string;
+  invitedUserUsername?: string;
   status: GroupInvitationStatus;
   createdAt: Date;
   updatedAt?: Date;

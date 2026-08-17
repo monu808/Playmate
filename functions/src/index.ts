@@ -184,6 +184,21 @@ const normalizeEmail = (value: unknown): string => {
   return String(value || "").trim().toLowerCase();
 };
 
+const MAX_USERNAME_LENGTH = 12;
+
+const normalizeUsername = (value: unknown): string => {
+  return String(value || "").trim();
+};
+
+const isValidUsername = (value: string): boolean => {
+  const normalized = normalizeUsername(value);
+  if (normalized.length < 1 || normalized.length > MAX_USERNAME_LENGTH) {
+    return false;
+  }
+
+  return !normalized.includes("/");
+};
+
 const getUserDisplayName = (userData: any, fallbackEmail?: string): string => {
   const fromProfile =
     String(userData?.name || "").trim() ||
@@ -792,12 +807,25 @@ export const createVerifiedBooking = functions.https.onCall(async (data, context
         .collection("bookings")
         .where("turfId", "==", normalizedPricingInput.turfId)
         .where("date", "==", normalizedPricingInput.date)
-        .where("startTime", "==", normalizedPricingInput.startTime)
-        .where("endTime", "==", normalizedPricingInput.endTime)
-        .where("status", "in", ["confirmed", "pending"]);
+        .limit(200);
 
       const existingBookingsSnap = await transaction.get(existingBookingsQuery);
-      if (!existingBookingsSnap.empty) {
+      const selectedStart = Number(normalizedPricingInput.startTime.replace(":", ""));
+      const selectedEnd = Number(normalizedPricingInput.endTime.replace(":", ""));
+
+      const hasOverlap = existingBookingsSnap.docs.some((doc) => {
+        const booking = doc.data() || {};
+        if (booking.status !== "confirmed" && booking.status !== "pending") {
+          return false;
+        }
+
+        const bookingStart = Number(String(booking.startTime || "0000").replace(":", ""));
+        const bookingEnd = Number(String(booking.endTime || "0000").replace(":", ""));
+
+        return !(selectedEnd <= bookingStart || selectedStart >= bookingEnd);
+      });
+
+      if (hasOverlap) {
         throw new functions.https.HttpsError(
           "already-exists",
           "This slot was just booked by someone else. Please select another time slot."
@@ -948,14 +976,18 @@ export const createVerifiedBooking = functions.https.onCall(async (data, context
       throw error;
     }
 
+    const errorMessage = error?.message || "Unknown server error while creating booking";
     functions.logger.error("Unexpected error in createVerifiedBooking", {
-      error: error.message,
-      stack: error.stack,
+      error: errorMessage,
+      stack: error?.stack,
+      bookingData: data?.bookingData,
+      pricingInput: data?.pricingInput,
     });
 
     throw new functions.https.HttpsError(
       "internal",
-      "An unexpected error occurred while creating booking"
+      "An unexpected error occurred while creating booking",
+      errorMessage
     );
   }
 });
@@ -1617,15 +1649,18 @@ export const inviteGroupMember = functions.https.onCall(async (data, context) =>
 
   const ownerId = context.auth.uid;
   const groupId = String(data?.groupId || "").trim();
-  const inviteeEmailRaw = String(data?.inviteeEmail || data?.email || "").trim();
-  const inviteeEmail = normalizeEmail(inviteeEmailRaw);
+  const inviteeUsernameRaw = String(data?.inviteeUsername || data?.username || "").trim();
+  const inviteeUsername = normalizeUsername(inviteeUsernameRaw);
 
   if (!groupId) {
     throw new functions.https.HttpsError("invalid-argument", "groupId is required");
   }
 
-  if (!inviteeEmail || !inviteeEmail.includes("@")) {
-    throw new functions.https.HttpsError("invalid-argument", "Valid teammate email is required");
+  if (!inviteeUsername || !isValidUsername(inviteeUsername)) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Valid teammate username is required"
+    );
   }
 
   const groupRef = db.collection("groups").doc(groupId);
@@ -1651,26 +1686,23 @@ export const inviteGroupMember = functions.https.onCall(async (data, context) =>
     );
   }
 
-  let userSnapshot = await db
-    .collection("users")
-    .where("email", "==", inviteeEmailRaw)
-    .limit(1)
-    .get();
+  const usernameRef = db.collection("usernames").doc(inviteeUsername);
+  const usernameSnap = await usernameRef.get();
 
-  if (userSnapshot.empty && inviteeEmailRaw !== inviteeEmail) {
-    userSnapshot = await db
-      .collection("users")
-      .where("email", "==", inviteeEmail)
-      .limit(1)
-      .get();
+  if (!usernameSnap.exists) {
+    throw new functions.https.HttpsError("not-found", "No user found with this username");
   }
 
-  if (userSnapshot.empty) {
-    throw new functions.https.HttpsError("not-found", "No user found with this email");
+  const invitedUserId = String(usernameSnap.data()?.uid || "");
+  if (!invitedUserId) {
+    throw new functions.https.HttpsError("not-found", "No user found with this username");
   }
 
-  const invitedUserDoc = userSnapshot.docs[0];
-  const invitedUserId = invitedUserDoc.id;
+  const invitedUserDoc = await db.collection("users").doc(invitedUserId).get();
+  if (!invitedUserDoc.exists) {
+    throw new functions.https.HttpsError("not-found", "No user found with this username");
+  }
+  const invitedUserData = invitedUserDoc.data() || {};
 
   if (invitedUserId === ownerId) {
     throw new functions.https.HttpsError("failed-precondition", "You are already in this group");
@@ -1701,7 +1733,8 @@ export const inviteGroupMember = functions.https.onCall(async (data, context) =>
     invitedBy: ownerId,
     invitedByName: ownerName,
     invitedUserId,
-    invitedUserEmail: normalizeEmail(invitedUserDoc.data()?.email || inviteeEmail),
+    invitedUserUsername: inviteeUsername,
+    invitedUserEmail: normalizeEmail(invitedUserData?.email || ""),
     status: "pending",
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),

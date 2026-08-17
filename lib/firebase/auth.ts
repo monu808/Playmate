@@ -3,6 +3,7 @@ import auth from '@react-native-firebase/auth';
 import { db, storage } from '../../config/firebase';
 import { User } from '../../types';
 import { isAdminEmail, initializeAdminUser } from './admin';
+import { normalizeUsername, validateUsername } from '../utils';
 
 /**
  * Sign in with Google using Expo AuthSession
@@ -64,6 +65,111 @@ export const signIn = async (email: string, password: string) => {
   }
 };
 
+const MAX_USERNAME_LENGTH = 12;
+
+const buildBaseUsername = (value: string): string => {
+  const normalized = normalizeUsername(value);
+  const safe = normalized
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (safe.length >= 1) {
+    return safe.slice(0, MAX_USERNAME_LENGTH);
+  }
+
+  return 'playmate';
+};
+
+const buildUsernameWithSuffix = (base: string, suffix: string): string => {
+  if (!suffix) {
+    return base.slice(0, MAX_USERNAME_LENGTH);
+  }
+
+  const trimmedBase = base.slice(0, Math.max(1, MAX_USERNAME_LENGTH - suffix.length - 1));
+  return `${trimmedBase}_${suffix}`.slice(0, MAX_USERNAME_LENGTH);
+};
+
+const tryReserveUsername = async (uid: string, username: string): Promise<boolean> => {
+  const usernameRef = db.collection('usernames').doc(username);
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(usernameRef);
+
+      if (snapshot.exists) {
+        throw new Error('USERNAME_TAKEN');
+      }
+
+      transaction.set(usernameRef, {
+        uid,
+        username,
+        createdAt: new Date(),
+      });
+    });
+
+    return true;
+  } catch (error: any) {
+    if (error?.message === 'USERNAME_TAKEN') {
+      return false;
+    }
+    throw error;
+  }
+};
+
+const reserveUsername = async (uid: string, username: string): Promise<void> => {
+  const reserved = await tryReserveUsername(uid, username);
+
+  if (!reserved) {
+    const error = new Error('USERNAME_TAKEN');
+    (error as any).code = 'USERNAME_TAKEN';
+    throw error;
+  }
+};
+
+const generateUniqueUsername = async (uid: string, seed: string): Promise<string> => {
+  const base = buildBaseUsername(seed);
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const suffix = attempt === 0 ? '' : String(attempt + 1);
+    const candidate = buildUsernameWithSuffix(base, suffix);
+
+    if (!validateUsername(candidate)) {
+      continue;
+    }
+
+    const reserved = await tryReserveUsername(uid, candidate);
+    if (reserved) {
+      return candidate;
+    }
+  }
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const randomSuffix = String(Math.floor(1000 + Math.random() * 9000));
+    const candidate = buildUsernameWithSuffix('playmate', randomSuffix);
+
+    if (await tryReserveUsername(uid, candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error('Unable to reserve a username. Please try again.');
+};
+
+export const ensureUsernameForUser = async (uid: string, seed: string): Promise<string> => {
+  const userRef = db.collection('users').doc(uid);
+  const userSnap = await userRef.get();
+  const existingUsername = String(userSnap.data()?.username || '').trim();
+
+  if (existingUsername) {
+    return existingUsername;
+  }
+
+  const username = await generateUniqueUsername(uid, seed);
+  await userRef.set({ username }, { merge: true });
+  return username;
+};
+
 /**
  * Sign up with email and password
  */
@@ -71,11 +177,30 @@ export const signUp = async (
   email: string,
   password: string,
   name: string,
+  username: string,
   phoneNumber?: string,
   role: 'user' | 'owner' = 'user',
   businessName?: string
 ) => {
   try {
+    const normalizedUsername = normalizeUsername(username);
+
+    if (!validateUsername(normalizedUsername)) {
+      return {
+        success: false,
+        error: 'Username must be 1-12 characters and cannot include "/".',
+      };
+    }
+
+    const usernameRef = db.collection('usernames').doc(normalizedUsername);
+    const usernameSnap = await usernameRef.get();
+    if (usernameSnap.exists) {
+      return {
+        success: false,
+        error: 'That username is already taken. Please choose another.',
+      };
+    }
+
     // Create auth user
     const userCredential = await auth().createUserWithEmailAndPassword(email, password);
     const user = userCredential.user;
@@ -85,10 +210,24 @@ export const signUp = async (
       displayName: name,
     });
 
+    try {
+      await reserveUsername(user.uid, normalizedUsername);
+    } catch (error: any) {
+      await user.delete();
+      return {
+        success: false,
+        error: error?.code === 'USERNAME_TAKEN'
+          ? 'That username is already taken. Please choose another.'
+          : 'Unable to reserve username. Please try again.',
+      };
+    }
+
     // Create user document in Firestore
     const userData: any = {
       uid: user.uid,
+      name,
       displayName: name,
+      username: normalizedUsername,
       email,
       phoneNumber: phoneNumber || '',
       role,
@@ -343,6 +482,10 @@ export const verifyPhoneOTP = async (
       };
       
       await db.collection('users').doc(firebaseUser.uid).set(userData);
+      await ensureUsernameForUser(
+        firebaseUser.uid,
+        firebaseUser.displayName || firebaseUser.phoneNumber || 'playmate'
+      );
       console.log('✅ User document created');
     } else {
       console.log('✅ Existing user signed in');
@@ -353,6 +496,11 @@ export const verifyPhoneOTP = async (
         });
         console.log('✅ Phone number updated for existing user');
       }
+
+      await ensureUsernameForUser(
+        firebaseUser.uid,
+        firebaseUser.displayName || firebaseUser.phoneNumber || 'playmate'
+      );
     }
     
     return {

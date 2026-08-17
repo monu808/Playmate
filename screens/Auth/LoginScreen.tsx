@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import auth from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { signIn } from '../../lib/firebase/auth';
 import { Button, Input } from '../../components/ui';
 import { colors, typography, spacing, borderRadius } from '../../lib/theme';
@@ -29,49 +30,59 @@ export default function LoginScreen({ navigation }: any) {
     });
   }, []);
 
+  const upsertUserDocForAuth = async (firebaseUser: any, providerName: string) => {
+    const { db } = await import('../../config/firebase');
+    const { initializeAdminUser } = await import('../../lib/firebase/admin');
+
+    const userDoc = await db.collection('users').doc(firebaseUser.uid).get();
+    const baseName =
+      firebaseUser.displayName ||
+      firebaseUser.email ||
+      `${providerName} User`;
+
+    const userData = {
+      uid: firebaseUser.uid,
+      email: firebaseUser.email || '',
+      name: baseName,
+      phoneNumber: firebaseUser.phoneNumber || null,
+      photoURL: firebaseUser.photoURL || null,
+      role: 'user',
+      createdAt: new Date(),
+    };
+
+    if (!userDoc.exists()) {
+      console.log(`🆕 ${providerName} user document does not exist - creating...`);
+      await db.collection('users').doc(firebaseUser.uid).set(userData);
+
+      if (firebaseUser.email) {
+        await initializeAdminUser(firebaseUser.uid, firebaseUser.email);
+      }
+    } else {
+      console.log(`✅ ${providerName} user document already exists`);
+      await db.collection('users').doc(firebaseUser.uid).set(
+        {
+          ...userData,
+          updatedAt: new Date(),
+        },
+        { merge: true }
+      );
+    }
+
+    const { ensureUsernameForUser } = await import('../../lib/firebase/auth');
+    await ensureUsernameForUser(firebaseUser.uid, baseName);
+  };
+
   const handleGoogleSignInSuccess = async (idToken: string) => {
     try {
       console.log('🔐 Creating Google credential with ID token...');
-      // Create a Google credential with the token
       const googleCredential = auth.GoogleAuthProvider.credential(idToken);
       console.log('✅ Google credential created');
-      
+
       console.log('🔄 Signing in to Firebase with credential...');
-      // Sign-in the user with the credential
       const userCredential = await auth().signInWithCredential(googleCredential);
       console.log('✅ Successfully signed in to Firebase!');
-      
-      // Always check and create/update user document
-      const { db } = await import('../../config/firebase');
-      const { initializeAdminUser } = await import('../../lib/firebase/admin');
-      
-      const firebaseUser = userCredential.user;
-      const userDoc = await db.collection('users').doc(firebaseUser.uid).get();
-      
-      if (!userDoc.exists()) {
-        console.log('🆕 User document does not exist - creating...');
-        const userData = {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email || '',
-          name: firebaseUser.displayName || 'Google User',
-          phoneNumber: firebaseUser.phoneNumber || null,
-          photoURL: firebaseUser.photoURL || null,
-          role: 'user',
-          createdAt: new Date(),
-        };
-        
-        await db.collection('users').doc(firebaseUser.uid).set(userData);
-        console.log('✅ User document created');
-        
-        // Initialize admin if email is in admin list
-        if (firebaseUser.email) {
-          await initializeAdminUser(firebaseUser.uid, firebaseUser.email);
-        }
-      } else {
-        console.log('✅ User document already exists');
-      }
-      
-      // Navigation handled by auth state change
+
+      await upsertUserDocForAuth(userCredential.user, 'Google');
     } catch (error: any) {
       console.error('❌ Google sign-in error:', error);
       console.error('Error code:', error.code);
@@ -80,31 +91,69 @@ export default function LoginScreen({ navigation }: any) {
     }
   };
 
+  const handleAppleSignIn = async () => {
+    try {
+      if (Platform.OS !== 'ios') {
+        Alert.alert('Apple Login', 'Apple Sign-In is available on iOS devices.');
+        return;
+      }
+
+      setLoading(true);
+      console.log('🔐 Starting Apple Sign-In...');
+
+      const appleResult = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!appleResult.identityToken) {
+        throw new Error('No identity token received from Apple');
+      }
+
+      const appleCredential = auth.AppleAuthProvider.credential(
+        appleResult.identityToken,
+        appleResult.nonce
+      );
+
+      const userCredential = await auth().signInWithCredential(appleCredential);
+      console.log('✅ Apple Sign-In successful:', userCredential.user.email);
+
+      await upsertUserDocForAuth(userCredential.user, 'Apple');
+    } catch (error: any) {
+      console.error('❌ Apple Sign-In error:', error);
+
+      if (error.code === 'ERR_CANCELED') {
+        console.log('User cancelled Apple sign-in');
+      } else {
+        Alert.alert('Error', error.message || 'Failed to sign in with Apple');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
       console.log('🔐 Starting Google Sign-In...');
-      
-      // Check if device supports Google Play services
+
       await GoogleSignin.hasPlayServices();
-      
-      // Sign in with Google
+
       const userInfo = await GoogleSignin.signIn();
       console.log('✅ Google Sign-In successful:', userInfo.data?.user.email);
-      
-      // Get ID token for Firebase authentication
+
       const idToken = userInfo.data?.idToken;
-      
+
       if (!idToken) {
         throw new Error('No ID token received from Google');
       }
-      
-      // Process sign-in with Firebase
+
       await handleGoogleSignInSuccess(idToken);
-      
     } catch (error: any) {
       console.error('❌ Google Sign-In error:', error);
-      
+
       if (error.code === 'SIGN_IN_CANCELLED') {
         console.log('User cancelled sign-in');
       } else if (error.code === 'IN_PROGRESS') {
@@ -161,6 +210,16 @@ export default function LoginScreen({ navigation }: any) {
             >
               <Ionicons name="logo-google" size={20} color="#DB4437" />
               <Text style={styles.googleButtonText}>Continue with Google</Text>
+            </TouchableOpacity>
+
+            {/* Apple Sign-In Button */}
+            <TouchableOpacity
+              style={styles.appleButton}
+              onPress={handleAppleSignIn}
+              disabled={loading}
+            >
+              <Ionicons name="logo-apple" size={20} color="#111827" />
+              <Text style={styles.appleButtonText}>Continue with Apple</Text>
             </TouchableOpacity>
 
             {/* Email Sign-In Button */}
@@ -263,6 +322,23 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   googleButtonText: {
+    fontSize: typography.fontSize.base,
+    color: colors.textPrimary,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  appleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    paddingVertical: spacing.md + 2,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: '#111827',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  appleButtonText: {
     fontSize: typography.fontSize.base,
     color: colors.textPrimary,
     fontWeight: typography.fontWeight.semibold,

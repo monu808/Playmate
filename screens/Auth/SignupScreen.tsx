@@ -14,13 +14,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { signUp } from '../../lib/firebase/auth';
 import { Button, Input } from '../../components/ui';
 import { colors, typography, spacing, borderRadius } from '../../lib/theme';
-import { validateEmail, validatePhone } from '../../lib/utils';
+import { normalizeUsername, validateEmail, validatePhone, validateUsername } from '../../lib/utils';
 
 export default function SignupScreen({ navigation }: any) {
   const [step, setStep] = useState<'role' | 'form'>('role');
   const [selectedRole, setSelectedRole] = useState<'user' | 'owner'>('user');
   const [formData, setFormData] = useState({
     name: '',
+    username: '',
     email: '',
     phone: '',
     password: '',
@@ -44,6 +45,12 @@ export default function SignupScreen({ navigation }: any) {
 
     if (!formData.name.trim()) {
       newErrors.name = 'Name is required';
+    }
+
+    if (!formData.username.trim()) {
+      newErrors.username = 'Username is required';
+    } else if (!validateUsername(formData.username)) {
+      newErrors.username = 'Username must be 1-12 characters and cannot include "/"';
     }
 
     if (!formData.email) {
@@ -85,6 +92,7 @@ export default function SignupScreen({ navigation }: any) {
         formData.email.trim(),
         formData.password,
         formData.name.trim(),
+        normalizeUsername(formData.username),
         formData.phone,
         selectedRole,
         selectedRole === 'owner' ? formData.businessName.trim() : undefined
@@ -257,6 +265,17 @@ export default function SignupScreen({ navigation }: any) {
                   error={errors.name}
                   required
                   leftIcon={<Ionicons name="person-outline" size={20} color={colors.gray[500]} />}
+                />
+
+                <Input
+                  label="Username"
+                  placeholder="choose_a_username"
+                  value={formData.username}
+                  onChangeText={(text) => updateField('username', text)}
+                  autoCapitalize="none"
+                  error={errors.username}
+                  required
+                  leftIcon={<Ionicons name="at" size={20} color={colors.gray[500]} />}
                 />
 
                 {selectedRole === 'owner' && (

@@ -238,34 +238,40 @@ const BookingModal: React.FC<BookingModalProps> = ({
     setQuoteLoading(true);
     setQuoteError('');
 
-    const result = await calculateBookingPricing({
-      turfId: turf.id,
-      date: format(selectedDate, 'yyyy-MM-dd'),
-      startTime,
-      endTime,
-      rewardCode: rewardCode.trim() || undefined,
-      requestedSpiritPoints,
-    });
+    try {
+      const result = await calculateBookingPricing({
+        turfId: turf.id,
+        date: format(selectedDate, 'yyyy-MM-dd'),
+        startTime,
+        endTime,
+        rewardCode: rewardCode.trim() || undefined,
+        requestedSpiritPoints,
+      });
 
-    setQuoteLoading(false);
+      if (!result.success || !result.quote) {
+        const errorText = result.error || 'Unable to calculate discounted price right now';
+        setQuoteError(errorText);
+        return null;
+      }
 
-    if (!result.success || !result.quote) {
-      const errorText = result.error || 'Unable to calculate discounted price right now';
-      setQuoteError(errorText);
-      return null;
-    }
+      const quote = result.quote;
+      setPricingQuote(quote);
+      setAvailableSpiritPoints(Math.max(0, Number(quote.availableSpiritPoints || 0)));
 
-    const quote = result.quote;
-    setPricingQuote(quote);
-    setAvailableSpiritPoints(Math.max(0, Number(quote.availableSpiritPoints || 0)));
+      if (rewardCode.trim() && quote?.rewardCodeValidation?.valid === false) {
+        setQuoteError(quote?.rewardCodeValidation?.message || 'Invalid reward code');
+        return quote;
+      }
 
-    if (rewardCode.trim() && quote?.rewardCodeValidation?.valid === false) {
-      setQuoteError(quote?.rewardCodeValidation?.message || 'Invalid reward code');
+      setQuoteError('');
       return quote;
+    } catch (error: any) {
+      console.error('Error refreshing pricing quote:', error);
+      setQuoteError(error?.message || 'Unable to calculate discounted price right now');
+      return null;
+    } finally {
+      setQuoteLoading(false);
     }
-
-    setQuoteError('');
-    return quote;
   }, [
     user,
     startTime,
@@ -426,7 +432,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
         // Reload slots in background
         loadBookedSlots();
       } else {
-        throw new Error('Booking creation failed');
+        throw new Error(result?.message || result?.error || 'Booking creation failed');
       }
     } catch (error: any) {
       console.error('❌ Error:', error);

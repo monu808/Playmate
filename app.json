@@ -14,6 +14,7 @@
       "backgroundColor": "#16a34a"
     },
     "ios": {
+      "bundleIdentifier": "com.monu80850.PlaymateApp",
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Playmate needs your location to show nearby turfs and calculate distances.",
@@ -62,6 +63,7 @@
         }
       ],
       "expo-font",
+      "expo-apple-authentication",
       "@react-native-firebase/app",
       "@react-native-firebase/crashlytics"
     ],
